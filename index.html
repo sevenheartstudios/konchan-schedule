@@ -164,6 +164,10 @@
   <h2>Konchan Polishing — Schedule Tracker</h2>
   <p>Enter PIN to view</p>
   <input type="password" id="passcode-input" placeholder="4-digit PIN" inputmode="numeric" pattern="[0-9]*" maxlength="4" />
+  <div id="token-row" style="display:none;flex-direction:column;align-items:center;gap:8px;width:100%;">
+    <p style="color:var(--muted);font-size:12px;margin:4px 0 0 0;">Admin token (not stored anywhere)</p>
+    <input type="password" id="token-input" placeholder="GitHub token" style="background:#11161b;border:1px solid var(--line);color:var(--text);padding:10px 14px;border-radius:8px;font-size:13px;width:220px;" />
+  </div>
   <button onclick="checkPasscode()">Unlock</button>
   <div id="gate-error"></div>
 </div>
@@ -211,21 +215,29 @@
    ============================================================ */
 const PASSCODE_READONLY = "2026"; // view only
 const PASSCODE_ADMIN    = "1260"; // add / edit / delete
-
-// Fine-grained PAT — Contents: Read & Write, scoped to this repo only.
-const GITHUB_TOKEN = "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";
-const GITHUB_REPO  = "sevenheartstudios/konchan-schedule";
-const DATA_FILE    = "data.json";
+const GITHUB_REPO       = "sevenheartstudios/konchan-schedule";
+const DATA_FILE         = "data.json";
 /* ============================================================ */
 
-const DB_URL = `https://api.github.com/repos/${GITHUB_REPO}/contents/${DATA_FILE}`;
+const DB_URL      = `https://api.github.com/repos/${GITHUB_REPO}/contents/${DATA_FILE}`;
+const RAW_URL     = `https://raw.githubusercontent.com/${GITHUB_REPO}/master/${DATA_FILE}`;
 
 let readOnly = true;
-let fileSha  = null; // GitHub requires the current sha to update a file
+let fileSha  = null;
+
+// Show token field only when admin PIN is typed
+document.getElementById('passcode-input').addEventListener('input', function(){
+  const show = this.value === PASSCODE_ADMIN;
+  const row = document.getElementById('token-row');
+  row.style.display = show ? 'flex' : 'none';
+});
 
 function checkPasscode(){
   const val = document.getElementById('passcode-input').value;
   if(val === PASSCODE_ADMIN){
+    const tok = document.getElementById('token-input').value.trim();
+    if(!tok){ document.getElementById('gate-error').textContent = "Paste your GitHub token."; return; }
+    sessionStorage.setItem('gh_tok', tok);
     readOnly = false;
   } else if(val === PASSCODE_READONLY){
     readOnly = true;
@@ -245,23 +257,25 @@ let data = null;
 
 async function loadData(){
   try{
-    const res = await fetch(DB_URL, {
-      headers: {
-        'Authorization': `Bearer ${GITHUB_TOKEN}`,
-        'Accept': 'application/vnd.github+json'
-      }
-    });
-    const meta = await res.json();
-    fileSha = meta.sha;
-    const json = JSON.parse(atob(meta.content));
+    // Public raw URL for reads — no token needed
+    const res = await fetch(RAW_URL + '?t=' + Date.now());
+    const json = await res.json();
     data = (json && json.jobs) ? json : null;
+    // Fetch sha separately (needed for saves) only if admin
+    if(!readOnly){
+      const tok = sessionStorage.getItem('gh_tok');
+      const meta = await fetch(DB_URL, {
+        headers:{ 'Authorization': `Bearer ${tok}`, 'Accept': 'application/vnd.github+json' }
+      }).then(r => r.json());
+      fileSha = meta.sha;
+    }
   } catch(e){
     console.error("Load failed", e);
     data = null;
   }
   if(!data){
     document.getElementById('loading-screen').innerHTML =
-      '<span style="color:#f0978a">Failed to load data. Check your GITHUB_TOKEN config.</span>';
+      '<span style="color:#f0978a">Failed to load data. Check the console for details.</span>';
     return;
   }
   document.getElementById('loading-screen').style.display = 'none';
@@ -283,11 +297,12 @@ function saveData(){
   indicator.textContent = 'Saving...';
   saveTimeout = setTimeout(async () => {
     try{
+      const tok = sessionStorage.getItem('gh_tok');
       const content = btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2))));
       const res = await fetch(DB_URL, {
         method: 'PUT',
         headers: {
-          'Authorization': `Bearer ${GITHUB_TOKEN}`,
+          'Authorization': `Bearer ${tok}`,
           'Accept': 'application/vnd.github+json',
           'Content-Type': 'application/json'
         },

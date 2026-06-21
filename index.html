@@ -186,9 +186,9 @@
     <div class="top-actions">
       <span id="save-indicator"></span>
       <button onclick="manualRefresh()">⟳ Refresh</button>
-      <button onclick="addCard('jobs')">+ Job</button>
-      <button onclick="addCard('urgent')">+ Urgent Item</button>
-      <button onclick="addCard('visits')">+ Visit/Check</button>
+      <button class="add-btn" onclick="addCard('jobs')">+ Job</button>
+      <button class="add-btn" onclick="addCard('urgent')">+ Urgent Item</button>
+      <button class="add-btn" onclick="addCard('visits')">+ Visit/Check</button>
     </div>
   </header>
 
@@ -209,22 +209,29 @@
 /* ============================================================
    CONFIG — set these two values
    ============================================================ */
-const PASSCODE = "2026"; // 4-digit PIN gate, change anytime
+const PASSCODE_READONLY = "2026"; // view only
+const PASSCODE_ADMIN    = "1260"; // add / edit / delete
 const API_URL = "https://script.google.com/macros/s/AKfycby70vdAt3bBM9cKv7vvi1y6U6YfKHzF88DlJOyDJT4oAo4k0XpMPEVTOjUBPaZ3irzV_A/exec"; // Apps Script Web App
 /* ============================================================ */
 
+let readOnly = true;
+
 function checkPasscode(){
   const val = document.getElementById('passcode-input').value;
-  if(val === PASSCODE){
-    document.getElementById('gate').style.display = 'none';
-    if(API_URL.includes("PASTE_YOUR")){
-      document.getElementById('config-warning').style.display = 'block';
-    }
-    document.getElementById('loading-screen').style.display = 'flex';
-    loadData();
+  if(val === PASSCODE_ADMIN){
+    readOnly = false;
+  } else if(val === PASSCODE_READONLY){
+    readOnly = true;
   } else {
     document.getElementById('gate-error').textContent = "Incorrect PIN.";
+    return;
   }
+  document.getElementById('gate').style.display = 'none';
+  if(API_URL.includes("PASTE_YOUR")){
+    document.getElementById('config-warning').style.display = 'block';
+  }
+  document.getElementById('loading-screen').style.display = 'flex';
+  loadData();
 }
 document.getElementById('passcode-input').addEventListener('keydown', e => {
   if(e.key === 'Enter') checkPasscode();
@@ -378,6 +385,20 @@ function render(){
   document.getElementById('jobs-container').innerHTML = data.jobs.map(renderJobCard).join('');
   document.getElementById('urgent-container').innerHTML = data.urgent.map(i=>renderSimpleCard('urgent',i)).join('');
   document.getElementById('visits-container').innerHTML = data.visits.map(i=>renderSimpleCard('visits',i)).join('');
+  applyReadOnly();
+}
+
+function applyReadOnly(){
+  // show/hide add buttons
+  document.querySelectorAll('.add-btn').forEach(el => el.style.display = readOnly ? 'none' : '');
+  // show/hide delete buttons
+  document.querySelectorAll('.del-btn').forEach(el => el.style.display = readOnly ? 'none' : '');
+  // disable all editable fields inside cards
+  document.querySelectorAll('.card input, .card textarea, .card select').forEach(el => {
+    el.disabled = readOnly;
+    el.style.opacity = readOnly ? '1' : '';
+    el.style.cursor = readOnly ? 'default' : '';
+  });
 }
 </script>
 

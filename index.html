@@ -207,14 +207,21 @@
 
 <script>
 /* ============================================================
-   CONFIG — set these two values
+   CONFIG
    ============================================================ */
 const PASSCODE_READONLY = "2026"; // view only
 const PASSCODE_ADMIN    = "1260"; // add / edit / delete
-const API_URL = "https://script.google.com/macros/s/AKfycby70vdAt3bBM9cKv7vvi1y6U6YfKHzF88DlJOyDJT4oAo4k0XpMPEVTOjUBPaZ3irzV_A/exec"; // Apps Script Web App
+
+// Fine-grained PAT — Contents: Read & Write, scoped to this repo only.
+const GITHUB_TOKEN = "PASTE_YOUR_TOKEN_HERE";
+const GITHUB_REPO  = "sevenheartstudios/konchan-schedule";
+const DATA_FILE    = "data.json";
 /* ============================================================ */
 
+const DB_URL = `https://api.github.com/repos/${GITHUB_REPO}/contents/${DATA_FILE}`;
+
 let readOnly = true;
+let fileSha  = null; // GitHub requires the current sha to update a file
 
 function checkPasscode(){
   const val = document.getElementById('passcode-input').value;
@@ -227,9 +234,6 @@ function checkPasscode(){
     return;
   }
   document.getElementById('gate').style.display = 'none';
-  if(API_URL.includes("PASTE_YOUR")){
-    document.getElementById('config-warning').style.display = 'block';
-  }
   document.getElementById('loading-screen').style.display = 'flex';
   loadData();
 }
@@ -239,39 +243,26 @@ document.getElementById('passcode-input').addEventListener('keydown', e => {
 
 let data = null;
 
-const defaultData = {
-  jobs: [
-    {id:'j1', name:'Nordstrom Rack — Lake Nona', loc:'Orlando, FL', status:'active', start:'June 22', duration:'3 weeks', finish:'~July 13', note:''},
-    {id:'j2', name:'Promenade at Town Center', loc:'Palm Coast, FL — RLH', status:'active', start:'June 8', duration:'', finish:'Week of 6/22', note:'6/22 slot already committed — competing with Turquoise House & Audi Daytona requests for that date.'},
-    {id:'j3', name:'OAP', loc:'Keystone Heights, FL', status:'upcoming', start:'June 29', duration:'3 days', finish:'~July 2', note:''}
-  ],
-  urgent: [
-    {id:'u1', name:'Turquoise House', loc:'Gainesville, FL', status:'urgent', note:'Competing with Audi Daytona for the 6/22 slot, already committed to Nordstrom Rack.'},
-    {id:'u2', name:'Mattress Warehouse', loc:'Lecanto, FL', status:'urgent', note:''}
-  ],
-  visits: [
-    {id:'v1', name:'Perspire Sauna Studio', loc:'South Hwy 19', status:'check', note:'Walk needed'},
-    {id:'v2', name:'Shands Garage', loc:'', status:'check', note:'Possible bushhammer scope'},
-    {id:'v3', name:'ECCCO', loc:'', status:'check', note:'Check status'},
-    {id:'v4', name:'Audi Daytona — Holler', loc:'', status:'check', note:'Check status; MVB report + final change order for RLH'}
-  ]
-};
-
 async function loadData(){
-  if(API_URL.includes("PASTE_YOUR")){
-    data = defaultData;
-    document.getElementById('loading-screen').style.display = 'none';
-    document.getElementById('app').style.display = 'block';
-    render();
-    return;
-  }
   try{
-    const res = await fetch(API_URL, {method:'GET'});
-    const json = await res.json();
-    data = (json && json.jobs) ? json : defaultData;
+    const res = await fetch(DB_URL, {
+      headers: {
+        'Authorization': `Bearer ${GITHUB_TOKEN}`,
+        'Accept': 'application/vnd.github+json'
+      }
+    });
+    const meta = await res.json();
+    fileSha = meta.sha;
+    const json = JSON.parse(atob(meta.content));
+    data = (json && json.jobs) ? json : null;
   } catch(e){
-    console.error("Load failed, using defaults", e);
-    data = defaultData;
+    console.error("Load failed", e);
+    data = null;
+  }
+  if(!data){
+    document.getElementById('loading-screen').innerHTML =
+      '<span style="color:#f0978a">Failed to load data. Check your GITHUB_TOKEN config.</span>';
+    return;
   }
   document.getElementById('loading-screen').style.display = 'none';
   document.getElementById('app').style.display = 'block';
@@ -286,23 +277,37 @@ function manualRefresh(){
 
 let saveTimeout;
 function saveData(){
+  if(readOnly) return;
   clearTimeout(saveTimeout);
   const indicator = document.getElementById('save-indicator');
   indicator.textContent = 'Saving...';
   saveTimeout = setTimeout(async () => {
-    if(API_URL.includes("PASTE_YOUR")){
-      indicator.textContent = 'Not connected — see warning above';
-      return;
-    }
     try{
-      // Use GET with encoded body param — avoids all CORS/redirect issues with Apps Script.
-      const encoded = encodeURIComponent(JSON.stringify(data));
-      await fetch(`${API_URL}?action=save&d=${encoded}`, {method: 'GET'});
-      indicator.textContent = 'Saved ✓';
-      setTimeout(()=>{indicator.textContent='';}, 1500);
+      const content = btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2))));
+      const res = await fetch(DB_URL, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${GITHUB_TOKEN}`,
+          'Accept': 'application/vnd.github+json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          message: 'tracker update',
+          content,
+          sha: fileSha
+        })
+      });
+      const result = await res.json();
+      if(result.content && result.content.sha){
+        fileSha = result.content.sha; // update sha for next save
+        indicator.textContent = 'Saved ✓';
+        setTimeout(()=>{indicator.textContent='';}, 1500);
+      } else {
+        throw new Error(result.message || 'unknown error');
+      }
     } catch(e){
       console.error(e);
-      indicator.textContent = 'Save failed';
+      indicator.textContent = 'Save failed: ' + e.message;
     }
   }, 500);
 }

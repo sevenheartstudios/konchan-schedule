@@ -1,0 +1,17 @@
+{
+  "jobs": [
+    {"id":"j1","name":"Nordstrom Rack — Lake Nona","loc":"Orlando, FL","status":"active","start":"June 22","duration":"3 weeks","finish":"~July 13","note":""},
+    {"id":"j2","name":"Promenade at Town Center","loc":"Palm Coast, FL — RLH","status":"active","start":"June 8","duration":"","finish":"Week of 6/22","note":"6/22 slot already committed — competing with Turquoise House & Audi Daytona requests for that date."},
+    {"id":"j3","name":"OAP","loc":"Keystone Heights, FL","status":"upcoming","start":"June 29","duration":"3 days","finish":"~July 2","note":""}
+  ],
+  "urgent": [
+    {"id":"u1","name":"Turquoise House","loc":"Gainesville, FL","status":"urgent","note":"Competing with Audi Daytona for the 6/22 slot, already committed to Nordstrom Rack."},
+    {"id":"u2","name":"Mattress Warehouse","loc":"Lecanto, FL","status":"urgent","note":""}
+  ],
+  "visits": [
+    {"id":"v1","name":"Perspire Sauna Studio","loc":"South Hwy 19","status":"check","note":"Walk needed"},
+    {"id":"v2","name":"Shands Garage","loc":"","status":"check","note":"Possible bushhammer scope"},
+    {"id":"v3","name":"ECCCO","loc":"","status":"check","note":"Check status"},
+    {"id":"v4","name":"Audi Daytona — Holler","loc":"","status":"check","note":"Check status; MVB report + final change order for RLH"}
+  ]
+}

@@ -295,9 +295,12 @@ function saveData(){
       return;
     }
     try{
+      // no-cors: Apps Script redirects on POST and drops CORS headers across the redirect.
+      // The data still saves; we just can't read the response.
       await fetch(API_URL, {
         method: 'POST',
-        headers: {'Content-Type': 'text/plain;charset=utf-8'}, // avoids CORS preflight with Apps Script
+        mode: 'no-cors',
+        headers: {'Content-Type': 'text/plain;charset=utf-8'},
         body: JSON.stringify(data)
       });
       indicator.textContent = 'Saved ✓';

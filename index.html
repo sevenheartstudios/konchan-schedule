@@ -225,11 +225,15 @@ const RAW_URL     = `https://raw.githubusercontent.com/${GITHUB_REPO}/master/${D
 let readOnly = true;
 let fileSha  = null;
 
-// Show token field only when admin PIN is typed
+// Show token field only when admin PIN is typed; pre-fill if already saved
 document.getElementById('passcode-input').addEventListener('input', function(){
   const show = this.value === PASSCODE_ADMIN;
   const row = document.getElementById('token-row');
   row.style.display = show ? 'flex' : 'none';
+  if(show){
+    const saved = localStorage.getItem('gh_tok');
+    if(saved) document.getElementById('token-input').value = saved;
+  }
 });
 
 function checkPasscode(){
@@ -237,7 +241,7 @@ function checkPasscode(){
   if(val === PASSCODE_ADMIN){
     const tok = document.getElementById('token-input').value.trim();
     if(!tok){ document.getElementById('gate-error').textContent = "Paste your GitHub token."; return; }
-    sessionStorage.setItem('gh_tok', tok);
+    localStorage.setItem('gh_tok', tok);
     readOnly = false;
   } else if(val === PASSCODE_READONLY){
     readOnly = true;
@@ -263,7 +267,7 @@ async function loadData(){
     data = (json && json.jobs) ? json : null;
     // Fetch sha separately (needed for saves) only if admin
     if(!readOnly){
-      const tok = sessionStorage.getItem('gh_tok');
+      const tok = localStorage.getItem('gh_tok');
       const meta = await fetch(DB_URL, {
         headers:{ 'Authorization': `Bearer ${tok}`, 'Accept': 'application/vnd.github+json' }
       }).then(r => r.json());
@@ -297,7 +301,7 @@ function saveData(){
   indicator.textContent = 'Saving...';
   saveTimeout = setTimeout(async () => {
     try{
-      const tok = sessionStorage.getItem('gh_tok');
+      const tok = localStorage.getItem('gh_tok');
       const content = btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2))));
       const res = await fetch(DB_URL, {
         method: 'PUT',

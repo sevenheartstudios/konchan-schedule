@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Konchan Polishing — Project Schedule Tracker</title>
+<style>
+  :root{
+    --bg:#0f1419;
+    --panel:#171d24;
+    --panel2:#1d242c;
+    --accent:#d4a24e;
+    --active:#3f7d5c;
+    --urgent:#b94a3c;
+    --upcoming:#3a6ea5;
+    --check:#7a6fa8;
+    --text:#eae6dd;
+    --muted:#8a93a0;
+    --line:#2a323b;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:'Segoe UI', Helvetica, Arial, sans-serif;
+    padding:0;
+  }
+  .wrap{max-width:980px;margin:0 auto;padding:32px;}
+
+  /* ---- GATE ---- */
+  #gate{
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex-direction:column;
+    gap:16px;
+  }
+  #gate h2{margin:0 0 6px 0;font-size:20px;}
+  #gate p{color:var(--muted);font-size:13px;margin:0 0 14px 0;}
+  #gate input{
+    background:#11161b;
+    border:1px solid var(--line);
+    color:var(--text);
+    padding:10px 14px;
+    border-radius:8px;
+    font-size:15px;
+    width:220px;
+    text-align:center;
+  }
+  #gate button{
+    background:var(--accent);
+    color:#1a1300;
+    border:none;
+    padding:10px 22px;
+    border-radius:8px;
+    font-weight:700;
+    cursor:pointer;
+    font-size:14px;
+  }
+  #gate-error{color:var(--urgent);font-size:13px;height:18px;}
+  #app{display:none;}
+
+  #loading-screen{
+    min-height:100vh;display:flex;align-items:center;justify-content:center;
+    color:var(--muted);font-size:14px;
+  }
+
+  header{
+    border-bottom:3px solid var(--accent);
+    padding-bottom:18px;
+    margin-bottom:30px;
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    flex-wrap:wrap;
+    gap:10px;
+  }
+  header h1{font-size:26px;margin:0;letter-spacing:0.5px;}
+  header .sub{color:var(--muted);font-size:13px;margin-top:4px;}
+  .top-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+  .top-actions button{
+    background:var(--panel2);
+    color:var(--text);
+    border:1px solid var(--line);
+    padding:8px 14px;
+    border-radius:7px;
+    font-size:13px;
+    cursor:pointer;
+  }
+  .top-actions button.primary{background:var(--accent);color:#1a1300;border:none;font-weight:700;}
+
+  .section-label{
+    font-size:13px;letter-spacing:2px;color:var(--accent);
+    text-transform:uppercase;margin:36px 0 14px 0;
+    display:flex;align-items:center;gap:10px;
+  }
+  .section-label::after{content:"";flex:1;height:1px;background:var(--line);}
+
+  .card{
+    background:var(--panel);border-radius:10px;border:1px solid var(--line);
+    padding:16px 20px;margin-bottom:14px;position:relative;overflow:hidden;
+  }
+  .card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;}
+  .card.active::before{background:var(--active);}
+  .card.upcoming::before{background:var(--upcoming);}
+  .card.urgent::before{background:var(--urgent);}
+  .card.check::before{background:var(--check);}
+
+  .card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;}
+  .job-name{font-size:17px;font-weight:700;margin:0 0 3px 0;background:none;border:none;color:var(--text);width:100%;font-family:inherit;}
+  .job-loc{font-size:13px;color:var(--muted);background:none;border:none;width:100%;font-family:inherit;margin-top:2px;}
+  .job-name:focus,.job-loc:focus{outline:1px dashed var(--accent);border-radius:4px;}
+
+  .badge-select{
+    font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;
+    padding:5px 10px;border-radius:20px;border:none;cursor:pointer;white-space:nowrap;
+  }
+  .badge-select.active{background:rgba(63,125,92,0.2);color:#7fd9a8;}
+  .badge-select.upcoming{background:rgba(58,110,165,0.2);color:#8ec1f0;}
+  .badge-select.urgent{background:rgba(185,74,60,0.2);color:#f0978a;}
+  .badge-select.check{background:rgba(122,111,168,0.2);color:#c4b8ef;}
+
+  .meta-row{display:flex;gap:18px;margin-top:10px;flex-wrap:wrap;}
+  .meta-item{font-size:13px;display:flex;align-items:center;gap:6px;}
+  .meta-item .k{color:var(--muted);}
+  .meta-item input{
+    background:#11161b;border:1px solid var(--line);color:var(--text);
+    padding:4px 8px;border-radius:5px;font-size:13px;font-family:inherit;width:120px;
+  }
+  .note{margin-top:10px;}
+  .note textarea{
+    width:100%;background:#11161b;border:1px solid var(--line);color:var(--muted);
+    font-style:italic;font-size:13px;border-radius:6px;padding:8px 10px;font-family:inherit;
+    resize:vertical;min-height:36px;
+  }
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  @media(max-width:700px){.grid2{grid-template-columns:1fr;}}
+
+  .card-footer{display:flex;justify-content:flex-end;margin-top:8px;}
+  .del-btn{
+    background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;
+    text-decoration:underline;
+  }
+  .del-btn:hover{color:var(--urgent);}
+
+  footer{
+    margin-top:36px;text-align:center;color:var(--muted);font-size:12px;
+    border-top:1px solid var(--line);padding-top:16px;
+  }
+  #save-indicator{
+    font-size:12px;color:var(--muted);transition:opacity 0.3s;
+  }
+  #config-warning{
+    background:rgba(185,74,60,0.15);border:1px solid var(--urgent);color:#f0978a;
+    padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:20px;display:none;
+  }
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <h2>Konchan Polishing — Schedule Tracker</h2>
+  <p>Enter PIN to view</p>
+  <input type="password" id="passcode-input" placeholder="4-digit PIN" inputmode="numeric" pattern="[0-9]*" maxlength="4" />
+  <button onclick="checkPasscode()">Unlock</button>
+  <div id="gate-error"></div>
+</div>
+
+<div id="loading-screen" style="display:none;">Loading schedule data...</div>
+
+<div id="app">
+<div class="wrap">
+
+  <div id="config-warning">
+    ⚠️ API_URL is not set yet. Open this file and replace the API_URL constant near the bottom
+    with your Apps Script Web App deployment URL. Until then, changes won't save anywhere.
+  </div>
+
+  <header>
+    <div>
+      <h1>Konchan Polishing</h1>
+      <div class="sub">Project Schedule &amp; Action Tracker</div>
+    </div>
+    <div class="top-actions">
+      <span id="save-indicator"></span>
+      <button onclick="manualRefresh()">⟳ Refresh</button>
+      <button onclick="addCard('jobs')">+ Job</button>
+      <button onclick="addCard('urgent')">+ Urgent Item</button>
+      <button onclick="addCard('visits')">+ Visit/Check</button>
+    </div>
+  </header>
+
+  <div class="section-label">Scheduled Jobs</div>
+  <div id="jobs-container"></div>
+
+  <div class="section-label">Needs Fitting In / Urgent</div>
+  <div class="grid2" id="urgent-container"></div>
+
+  <div class="section-label">Site Visits &amp; Status Checks</div>
+  <div class="grid2" id="visits-container"></div>
+
+  <footer>Konchan Polishing / Expert Concrete Polishing, Inc. — Inverness, FL</footer>
+</div>
+</div>
+
+<script>
+/* ============================================================
+   CONFIG — set these two values
+   ============================================================ */
+const PASSCODE = "2026"; // 4-digit PIN gate, change anytime
+const API_URL = "https://script.google.com/macros/s/AKfycby70vdAt3bBM9cKv7vvi1y6U6YfKHzF88DlJOyDJT4oAo4k0XpMPEVTOjUBPaZ3irzV_A/exec"; // Apps Script Web App
+/* ============================================================ */
+
+function checkPasscode(){
+  const val = document.getElementById('passcode-input').value;
+  if(val === PASSCODE){
+    document.getElementById('gate').style.display = 'none';
+    if(API_URL.includes("PASTE_YOUR")){
+      document.getElementById('config-warning').style.display = 'block';
+    }
+    document.getElementById('loading-screen').style.display = 'flex';
+    loadData();
+  } else {
+    document.getElementById('gate-error').textContent = "Incorrect PIN.";
+  }
+}
+document.getElementById('passcode-input').addEventListener('keydown', e => {
+  if(e.key === 'Enter') checkPasscode();
+});
+
+let data = null;
+
+const defaultData = {
+  jobs: [
+    {id:'j1', name:'Nordstrom Rack — Lake Nona', loc:'Orlando, FL', status:'active', start:'June 22', duration:'3 weeks', finish:'~July 13', note:''},
+    {id:'j2', name:'Promenade at Town Center', loc:'Palm Coast, FL — RLH', status:'active', start:'June 8', duration:'', finish:'Week of 6/22', note:'6/22 slot already committed — competing with Turquoise House & Audi Daytona requests for that date.'},
+    {id:'j3', name:'OAP', loc:'Keystone Heights, FL', status:'upcoming', start:'June 29', duration:'3 days', finish:'~July 2', note:''}
+  ],
+  urgent: [
+    {id:'u1', name:'Turquoise House', loc:'Gainesville, FL', status:'urgent', note:'Competing with Audi Daytona for the 6/22 slot, already committed to Nordstrom Rack.'},
+    {id:'u2', name:'Mattress Warehouse', loc:'Lecanto, FL', status:'urgent', note:''}
+  ],
+  visits: [
+    {id:'v1', name:'Perspire Sauna Studio', loc:'South Hwy 19', status:'check', note:'Walk needed'},
+    {id:'v2', name:'Shands Garage', loc:'', status:'check', note:'Possible bushhammer scope'},
+    {id:'v3', name:'ECCCO', loc:'', status:'check', note:'Check status'},
+    {id:'v4', name:'Audi Daytona — Holler', loc:'', status:'check', note:'Check status; MVB report + final change order for RLH'}
+  ]
+};
+
+async function loadData(){
+  if(API_URL.includes("PASTE_YOUR")){
+    data = defaultData;
+    document.getElementById('loading-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    render();
+    return;
+  }
+  try{
+    const res = await fetch(API_URL, {method:'GET'});
+    const json = await res.json();
+    data = (json && json.jobs) ? json : defaultData;
+  } catch(e){
+    console.error("Load failed, using defaults", e);
+    data = defaultData;
+  }
+  document.getElementById('loading-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  render();
+}
+
+function manualRefresh(){
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('loading-screen').style.display = 'flex';
+  loadData();
+}
+
+let saveTimeout;
+function saveData(){
+  clearTimeout(saveTimeout);
+  const indicator = document.getElementById('save-indicator');
+  indicator.textContent = 'Saving...';
+  saveTimeout = setTimeout(async () => {
+    if(API_URL.includes("PASTE_YOUR")){
+      indicator.textContent = 'Not connected — see warning above';
+      return;
+    }
+    try{
+      await fetch(API_URL, {
+        method: 'POST',
+        headers: {'Content-Type': 'text/plain;charset=utf-8'}, // avoids CORS preflight with Apps Script
+        body: JSON.stringify(data)
+      });
+      indicator.textContent = 'Saved ✓';
+      setTimeout(()=>{indicator.textContent='';}, 1500);
+    } catch(e){
+      console.error(e);
+      indicator.textContent = 'Save failed';
+    }
+  }, 500);
+}
+
+function uid(){return 'id'+Math.random().toString(36).slice(2,9);}
+
+function addCard(section){
+  const item = {id:uid(), name:'New Item', loc:'', status: section==='jobs' ? 'upcoming' : section==='urgent' ? 'urgent' : 'check', note:''};
+  if(section==='jobs'){ item.start=''; item.duration=''; item.finish=''; }
+  data[section].push(item);
+  saveData();
+  render();
+}
+
+function deleteCard(section, id){
+  data[section] = data[section].filter(i => i.id !== id);
+  saveData();
+  render();
+}
+
+function updateField(section, id, field, value){
+  const item = data[section].find(i => i.id === id);
+  if(item){ item[field] = value; saveData(); }
+}
+
+function statusBadgeOptions(){
+  return [
+    ['active','Active'],
+    ['upcoming','Upcoming'],
+    ['urgent','Urgent'],
+    ['check','Check/Pending']
+  ];
+}
+
+function renderJobCard(item){
+  return `
+  <div class="card ${item.status}">
+    <div class="card-top">
+      <div style="flex:1">
+        <input class="job-name" value="${escapeAttr(item.name)}" onchange="updateField('jobs','${item.id}','name',this.value)" />
+        <input class="job-loc" value="${escapeAttr(item.loc)}" placeholder="Location" onchange="updateField('jobs','${item.id}','loc',this.value)" />
+      </div>
+      <select class="badge-select ${item.status}" onchange="updateField('jobs','${item.id}','status',this.value); this.className='badge-select '+this.value;">
+        ${statusBadgeOptions().map(([v,l])=>`<option value="${v}" ${item.status===v?'selected':''}>${l}</option>`).join('')}
+      </select>
+    </div>
+    <div class="meta-row">
+      <div class="meta-item"><span class="k">Start:</span><input value="${escapeAttr(item.start||'')}" onchange="updateField('jobs','${item.id}','start',this.value)" /></div>
+      <div class="meta-item"><span class="k">Duration:</span><input value="${escapeAttr(item.duration||'')}" onchange="updateField('jobs','${item.id}','duration',this.value)" /></div>
+      <div class="meta-item"><span class="k">Finish:</span><input value="${escapeAttr(item.finish||'')}" onchange="updateField('jobs','${item.id}','finish',this.value)" /></div>
+    </div>
+    <div class="note"><textarea placeholder="Notes..." onchange="updateField('jobs','${item.id}','note',this.value)">${escapeHTML(item.note||'')}</textarea></div>
+    <div class="card-footer"><button class="del-btn" onclick="deleteCard('jobs','${item.id}')">Remove</button></div>
+  </div>`;
+}
+
+function renderSimpleCard(section, item){
+  return `
+  <div class="card ${item.status}">
+    <div class="card-top">
+      <div style="flex:1">
+        <input class="job-name" value="${escapeAttr(item.name)}" onchange="updateField('${section}','${item.id}','name',this.value)" />
+        <input class="job-loc" value="${escapeAttr(item.loc||'')}" placeholder="Location" onchange="updateField('${section}','${item.id}','loc',this.value)" />
+      </div>
+      <select class="badge-select ${item.status}" onchange="updateField('${section}','${item.id}','status',this.value); this.className='badge-select '+this.value;">
+        ${statusBadgeOptions().map(([v,l])=>`<option value="${v}" ${item.status===v?'selected':''}>${l}</option>`).join('')}
+      </select>
+    </div>
+    <div class="note"><textarea placeholder="Notes..." onchange="updateField('${section}','${item.id}','note',this.value)">${escapeHTML(item.note||'')}</textarea></div>
+    <div class="card-footer"><button class="del-btn" onclick="deleteCard('${section}','${item.id}')">Remove</button></div>
+  </div>`;
+}
+
+function escapeAttr(s){ return (s||'').replace(/"/g,'&quot;'); }
+function escapeHTML(s){ return (s||'').replace(/</g,'&lt;'); }
+
+function render(){
+  document.getElementById('jobs-container').innerHTML = data.jobs.map(renderJobCard).join('');
+  document.getElementById('urgent-container').innerHTML = data.urgent.map(i=>renderSimpleCard('urgent',i)).join('');
+  document.getElementById('visits-container').innerHTML = data.visits.map(i=>renderSimpleCard('visits',i)).join('');
+}
+</script>
+
+</body>
+</html>

@@ -2,289 +2,354 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Konchan Polishing — Project Schedule Tracker</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f1419">
+<title>Konchan — Schedule</title>
 <style>
-  :root{
-    --bg:#0f1419;
-    --panel:#171d24;
-    --panel2:#1d242c;
-    --accent:#d4a24e;
-    --active:#3f7d5c;
-    --urgent:#b94a3c;
-    --upcoming:#3a6ea5;
-    --check:#7a6fa8;
-    --text:#eae6dd;
-    --muted:#8a93a0;
-    --line:#2a323b;
-  }
-  *{box-sizing:border-box;}
-  body{
-    margin:0;
-    background:var(--bg);
-    color:var(--text);
-    font-family:'Segoe UI', Helvetica, Arial, sans-serif;
-    padding:0;
-  }
-  .wrap{max-width:980px;margin:0 auto;padding:32px;}
+:root{
+  --bg:#0f1419;
+  --panel:#171d24;
+  --panel2:#1d242c;
+  --accent:#d4a24e;
+  --active:#3f7d5c;
+  --urgent:#b94a3c;
+  --upcoming:#3a6ea5;
+  --check:#7a6fa8;
+  --text:#eae6dd;
+  --muted:#8a93a0;
+  --line:#2a323b;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:16px;line-height:1.4;overscroll-behavior:none;}
 
-  /* ---- GATE ---- */
-  #gate{
-    min-height:100vh;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    flex-direction:column;
-    gap:16px;
-  }
-  #gate h2{margin:0 0 6px 0;font-size:20px;}
-  #gate p{color:var(--muted);font-size:13px;margin:0 0 14px 0;}
-  #gate input{
-    background:#11161b;
-    border:1px solid var(--line);
-    color:var(--text);
-    padding:10px 14px;
-    border-radius:8px;
-    font-size:15px;
-    width:220px;
-    text-align:center;
-  }
-  #gate button{
-    background:var(--accent);
-    color:#1a1300;
-    border:none;
-    padding:10px 22px;
-    border-radius:8px;
-    font-weight:700;
-    cursor:pointer;
-    font-size:14px;
-  }
-  #gate-error{color:var(--urgent);font-size:13px;height:18px;}
-  #app{display:none;}
+/* ---- GATE ---- */
+#gate{
+  min-height:100dvh;display:flex;align-items:center;justify-content:center;
+  flex-direction:column;gap:20px;padding:24px;
+}
+#gate h2{margin:0 0 4px;font-size:22px;text-align:center;}
+#gate p{color:var(--muted);font-size:14px;margin:0 0 8px;text-align:center;}
+#passcode-input{
+  background:#11161b;border:1px solid var(--line);color:var(--text);
+  padding:14px;border-radius:12px;font-size:24px;width:180px;
+  text-align:center;letter-spacing:6px;-webkit-appearance:none;
+}
+#gate button{
+  background:var(--accent);color:#1a1300;border:none;padding:14px 32px;
+  border-radius:12px;font-weight:700;cursor:pointer;font-size:16px;width:180px;
+  -webkit-appearance:none;
+}
+#gate-error{color:var(--urgent);font-size:14px;min-height:20px;text-align:center;}
 
-  #loading-screen{
-    min-height:100vh;display:flex;align-items:center;justify-content:center;
-    color:var(--muted);font-size:14px;
-  }
+/* ---- LOADING ---- */
+#loading-screen{
+  min-height:100dvh;display:flex;align-items:center;justify-content:center;
+  color:var(--muted);font-size:15px;
+}
 
-  header{
-    border-bottom:3px solid var(--accent);
-    padding-bottom:18px;
-    margin-bottom:30px;
-    display:flex;
-    justify-content:space-between;
-    align-items:baseline;
-    flex-wrap:wrap;
-    gap:10px;
-  }
-  header h1{font-size:26px;margin:0;letter-spacing:0.5px;}
-  header .sub{color:var(--muted);font-size:13px;margin-top:4px;}
-  .top-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
-  .top-actions button{
-    background:var(--panel2);
-    color:var(--text);
-    border:1px solid var(--line);
-    padding:8px 14px;
-    border-radius:7px;
-    font-size:13px;
-    cursor:pointer;
-  }
-  .top-actions button.primary{background:var(--accent);color:#1a1300;border:none;font-weight:700;}
+/* ---- APP SHELL ---- */
+#app{display:none;}
 
-  .section-label{
-    font-size:13px;letter-spacing:2px;color:var(--accent);
-    text-transform:uppercase;margin:36px 0 14px 0;
-    display:flex;align-items:center;gap:10px;
-  }
-  .section-label::after{content:"";flex:1;height:1px;background:var(--line);}
+/* ---- STICKY HEADER ---- */
+.app-header{
+  position:sticky;top:0;z-index:100;
+  background:var(--bg);border-bottom:2px solid var(--accent);
+  padding:12px 16px;padding-top:calc(12px + var(--safe-top));
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+}
+.app-header h1{font-size:17px;margin:0;letter-spacing:0.3px;white-space:nowrap;}
+.app-header .sub{font-size:11px;color:var(--muted);margin-top:1px;}
+.header-actions{display:flex;gap:8px;align-items:center;}
+.icon-btn{
+  background:var(--panel2);border:1px solid var(--line);color:var(--text);
+  padding:8px 12px;border-radius:8px;font-size:13px;cursor:pointer;
+  min-height:40px;display:flex;align-items:center;gap:4px;white-space:nowrap;
+}
+#save-indicator{font-size:12px;color:var(--muted);}
 
-  .card{
-    background:var(--panel);border-radius:10px;border:1px solid var(--line);
-    padding:16px 20px;margin-bottom:14px;position:relative;overflow:hidden;
-  }
-  .card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;}
-  .card.active::before{background:var(--active);}
-  .card.upcoming::before{background:var(--upcoming);}
-  .card.urgent::before{background:var(--urgent);}
-  .card.check::before{background:var(--check);}
+/* ---- SCROLL BODY ---- */
+.app-body{
+  padding:12px 12px;
+  padding-bottom:calc(80px + var(--safe-bottom));
+}
 
-  .card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;}
-  .job-name{font-size:17px;font-weight:700;margin:0 0 3px 0;background:none;border:none;color:var(--text);width:100%;font-family:inherit;}
-  .job-loc{font-size:13px;color:var(--muted);background:none;border:none;width:100%;font-family:inherit;margin-top:2px;}
-  .job-name:focus,.job-loc:focus{outline:1px dashed var(--accent);border-radius:4px;}
+/* ---- SECTION LABELS ---- */
+.section-label{
+  font-size:11px;letter-spacing:2px;color:var(--accent);text-transform:uppercase;
+  margin:20px 0 10px;display:flex;align-items:center;gap:10px;
+}
+.section-label::after{content:"";flex:1;height:1px;background:var(--line);}
 
-  .badge-select{
-    font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;
-    padding:5px 10px;border-radius:20px;border:none;cursor:pointer;white-space:nowrap;
-  }
-  .badge-select.active{background:rgba(63,125,92,0.2);color:#7fd9a8;}
-  .badge-select.upcoming{background:rgba(58,110,165,0.2);color:#8ec1f0;}
-  .badge-select.urgent{background:rgba(185,74,60,0.2);color:#f0978a;}
-  .badge-select.check{background:rgba(122,111,168,0.2);color:#c4b8ef;}
+/* ---- CARDS ---- */
+.card{
+  background:var(--panel);border-radius:12px;border:1px solid var(--line);
+  margin-bottom:10px;overflow:hidden;position:relative;
+}
+.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;}
+.card.active::before{background:var(--active);}
+.card.upcoming::before{background:var(--upcoming);}
+.card.urgent::before{background:var(--urgent);}
+.card.check::before{background:var(--check);}
 
-  .meta-row{display:flex;gap:18px;margin-top:10px;flex-wrap:wrap;}
-  .meta-item{font-size:13px;display:flex;align-items:center;gap:6px;}
-  .meta-item .k{color:var(--muted);}
-  .meta-item input{
-    background:#11161b;border:1px solid var(--line);color:var(--text);
-    padding:4px 8px;border-radius:5px;font-size:13px;font-family:inherit;width:120px;
-  }
-  .note{margin-top:10px;}
-  .note textarea{
-    width:100%;background:#11161b;border:1px solid var(--line);color:var(--muted);
-    font-style:italic;font-size:13px;border-radius:6px;padding:8px 10px;font-family:inherit;
-    resize:vertical;min-height:36px;
-  }
+/* Card header row — always visible */
+.card-header{
+  display:flex;align-items:center;gap:10px;padding:14px 14px 14px 18px;
+  cursor:pointer;user-select:none;
+}
+.card-header-text{flex:1;min-width:0;}
+.card-name-input{
+  background:none;border:none;color:var(--text);font-size:16px;font-weight:700;
+  font-family:inherit;width:100%;padding:0;margin:0;
+}
+.card-name-input:focus{outline:1px dashed var(--accent);border-radius:4px;}
+.card-loc-input{
+  background:none;border:none;color:var(--muted);font-size:13px;
+  font-family:inherit;width:100%;padding:0;margin-top:3px;
+}
+.card-loc-input:focus{outline:1px dashed var(--accent);border-radius:4px;}
+.card-chevron{color:var(--muted);font-size:18px;transition:transform 0.2s;flex-shrink:0;}
+.card.open .card-chevron{transform:rotate(90deg);}
 
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
-  @media(max-width:700px){.grid2{grid-template-columns:1fr;}}
+/* Badge */
+.badge{
+  font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;
+  padding:4px 9px;border-radius:20px;white-space:nowrap;flex-shrink:0;
+}
+.badge.active{background:rgba(63,125,92,0.2);color:#7fd9a8;}
+.badge.upcoming{background:rgba(58,110,165,0.2);color:#8ec1f0;}
+.badge.urgent{background:rgba(185,74,60,0.2);color:#f0978a;}
+.badge.check{background:rgba(122,111,168,0.2);color:#c4b8ef;}
 
-  .card-footer{display:flex;justify-content:flex-end;margin-top:8px;}
-  .del-btn{
-    background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;
-    text-decoration:underline;
-  }
-  .del-btn:hover{color:var(--urgent);}
+/* Expandable body */
+.card-body{display:none;padding:0 14px 14px 18px;border-top:1px solid var(--line);}
+.card.open .card-body{display:block;}
 
-  footer{
-    margin-top:36px;text-align:center;color:var(--muted);font-size:12px;
-    border-top:1px solid var(--line);padding-top:16px;
-  }
-  #save-indicator{
-    font-size:12px;color:var(--muted);transition:opacity 0.3s;
-  }
-  #config-warning{
-    background:rgba(185,74,60,0.15);border:1px solid var(--urgent);color:#f0978a;
-    padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:20px;display:none;
-  }
+/* Status select inside expanded body */
+.field-row{display:flex;align-items:center;gap:8px;margin:12px 0 0;}
+.field-label{font-size:12px;color:var(--muted);min-width:58px;}
+.field-input{
+  flex:1;background:#11161b;border:1px solid var(--line);color:var(--text);
+  padding:9px 10px;border-radius:8px;font-size:14px;font-family:inherit;
+  -webkit-appearance:none;
+}
+.field-select{
+  flex:1;background:#11161b;border:1px solid var(--line);color:var(--text);
+  padding:9px 10px;border-radius:8px;font-size:14px;font-family:inherit;
+  -webkit-appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%238a93a0' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 10px center;
+  padding-right:30px;
+}
+.note-textarea{
+  width:100%;background:#11161b;border:1px solid var(--line);color:var(--muted);
+  font-style:italic;font-size:13px;border-radius:8px;padding:10px 12px;
+  font-family:inherit;resize:vertical;min-height:48px;margin-top:12px;
+  -webkit-appearance:none;
+}
+
+/* Card actions row */
+.card-actions{
+  display:flex;justify-content:space-between;align-items:center;
+  margin-top:14px;gap:8px;
+}
+.reorder-btns{display:flex;gap:4px;}
+.reorder-btn{
+  background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+  width:36px;height:36px;border-radius:8px;font-size:16px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+}
+.del-btn{
+  background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;
+  text-decoration:underline;padding:8px 4px;
+}
+.del-btn:hover{color:var(--urgent);}
+.section-move-select{
+  background:#11161b;border:1px solid var(--line);color:var(--muted);
+  padding:7px 28px 7px 10px;border-radius:8px;font-size:12px;cursor:pointer;
+  -webkit-appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='7' viewBox='0 0 10 7'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238a93a0' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 8px center;
+}
+
+/* ---- FAB ---- */
+.fab{
+  position:fixed;bottom:calc(20px + var(--safe-bottom));right:16px;
+  z-index:200;
+}
+.fab-main{
+  width:56px;height:56px;border-radius:50%;background:var(--accent);
+  color:#1a1300;border:none;font-size:28px;font-weight:300;cursor:pointer;
+  box-shadow:0 4px 16px rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;
+}
+.fab-menu{
+  display:none;flex-direction:column;gap:8px;align-items:flex-end;
+  margin-bottom:12px;
+}
+.fab-menu.open{display:flex;}
+.fab-item{
+  display:flex;align-items:center;gap:10px;
+}
+.fab-label{
+  background:var(--panel);border:1px solid var(--line);color:var(--text);
+  font-size:13px;font-weight:600;padding:8px 14px;border-radius:20px;
+  white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.4);
+}
+.fab-dot{
+  width:40px;height:40px;border-radius:50%;background:var(--panel2);
+  border:1px solid var(--line);color:var(--text);font-size:18px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 2px 8px rgba(0,0,0,0.4);
+}
+
+footer{text-align:center;color:var(--muted);font-size:11px;padding:16px 0 4px;}
+
+/* ---- DESKTOP ENHANCEMENTS ---- */
+@media(min-width:700px){
+  .app-body{max-width:680px;margin:0 auto;padding:20px 20px calc(80px + var(--safe-bottom));}
+  .app-header{padding:14px 24px;}
+  .app-header h1{font-size:20px;}
+  .card-header{padding:16px 16px 16px 20px;}
+  .card-body{padding:0 16px 16px 20px;}
+}
 </style>
 </head>
 <body>
 
 <div id="gate">
-  <h2>Konchan Polishing — Schedule Tracker</h2>
-  <p>Enter PIN to view</p>
-  <input type="password" id="passcode-input" placeholder="4-digit PIN" inputmode="numeric" pattern="[0-9]*" maxlength="4" />
-  <div id="token-row" style="display:none;flex-direction:column;align-items:center;gap:8px;width:100%;">
-    <p style="color:var(--muted);font-size:12px;margin:4px 0 0 0;">Admin token (not stored anywhere)</p>
-    <input type="password" id="token-input" placeholder="GitHub token" style="background:#11161b;border:1px solid var(--line);color:var(--text);padding:10px 14px;border-radius:8px;font-size:13px;width:220px;" />
+  <div>
+    <h2>Konchan Polishing</h2>
+    <p>Enter PIN to view schedule</p>
   </div>
+  <input type="password" id="passcode-input" placeholder="••••" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" />
   <button onclick="checkPasscode()">Unlock</button>
   <div id="gate-error"></div>
 </div>
 
-<div id="loading-screen" style="display:none;">Loading schedule data...</div>
+<div id="loading-screen" style="display:none;">Loading schedule...</div>
 
 <div id="app">
-<div class="wrap">
-
-  <div id="config-warning">
-    ⚠️ API_URL is not set yet. Open this file and replace the API_URL constant near the bottom
-    with your Apps Script Web App deployment URL. Until then, changes won't save anywhere.
-  </div>
-
-  <header>
+  <div class="app-header">
     <div>
       <h1>Konchan Polishing</h1>
-      <div class="sub">Project Schedule &amp; Action Tracker</div>
+      <div class="sub">Project Schedule &amp; Tracker</div>
     </div>
-    <div class="top-actions">
+    <div class="header-actions">
       <span id="save-indicator"></span>
-      <button onclick="manualRefresh()">⟳ Refresh</button>
-      <button class="add-btn" onclick="addCard('jobs')">+ Job</button>
-      <button class="add-btn" onclick="addCard('urgent')">+ Urgent Item</button>
-      <button class="add-btn" onclick="addCard('visits')">+ Visit/Check</button>
+      <button class="icon-btn" onclick="manualRefresh()">Refresh</button>
+      <button class="icon-btn add-btn" onclick="backupData()">Backup</button>
+      <button class="icon-btn" onclick="logout()">Logout</button>
     </div>
-  </header>
+  </div>
 
-  <div class="section-label">Scheduled Jobs</div>
-  <div id="jobs-container"></div>
+  <div class="app-body">
+    <div class="section-label">Scheduled Jobs</div>
+    <div id="jobs-container"></div>
 
-  <div class="section-label">Needs Fitting In / Urgent</div>
-  <div class="grid2" id="urgent-container"></div>
+    <div class="section-label">Urgent / Needs Fitting In</div>
+    <div id="urgent-container"></div>
 
-  <div class="section-label">Site Visits &amp; Status Checks</div>
-  <div class="grid2" id="visits-container"></div>
+    <div class="section-label">Site Visits &amp; Status Checks</div>
+    <div id="visits-container"></div>
 
-  <footer>Konchan Polishing / Expert Concrete Polishing, Inc. — Inverness, FL</footer>
-</div>
+    <footer>Konchan Polishing / Expert Concrete Polishing, Inc. — Inverness, FL</footer>
+  </div>
+
+  <!-- FAB -->
+  <div class="fab add-btn">
+    <div class="fab-menu" id="fab-menu">
+      <div class="fab-item">
+        <span class="fab-label" onclick="addCard('visits');closeFab()">+ Visit / Check</span>
+        <div class="fab-dot" onclick="addCard('visits');closeFab()">📍</div>
+      </div>
+      <div class="fab-item">
+        <span class="fab-label" onclick="addCard('urgent');closeFab()">+ Urgent Item</span>
+        <div class="fab-dot" onclick="addCard('urgent');closeFab()">⚡</div>
+      </div>
+      <div class="fab-item">
+        <span class="fab-label" onclick="addCard('jobs');closeFab()">+ Job</span>
+        <div class="fab-dot" onclick="addCard('jobs');closeFab()">🏗</div>
+      </div>
+    </div>
+    <button class="fab-main" id="fab-btn" onclick="toggleFab()">+</button>
+  </div>
 </div>
 
 <script>
-/* ============================================================
-   CONFIG
-   ============================================================ */
-const PASSCODE_READONLY = "2026"; // view only
-const PASSCODE_ADMIN    = "1260"; // add / edit / delete
-const GITHUB_REPO       = "sevenheartstudios/konchan-schedule";
-const DATA_FILE         = "data.json";
-/* ============================================================ */
-
-const DB_URL      = `https://api.github.com/repos/${GITHUB_REPO}/contents/${DATA_FILE}`;
-const RAW_URL     = `https://raw.githubusercontent.com/${GITHUB_REPO}/master/${DATA_FILE}`;
+const PASSCODE_READONLY = "2026";
+const PASSCODE_ADMIN    = "1260";
+const DB_URL     = "https://konchan-schedule-default-rtdb.firebaseio.com/tracker.json";
+// Writes go through ARTracker's secured proxy instead of talking to Firebase directly. The old
+// version of this app embedded a Firebase Realtime Database legacy secret directly in this file,
+// which fully bypasses every database security rule (not just this one path) for anyone who found
+// it via view-source. The proxy secret below is scoped ONLY to writing shape-validated schedule
+// data through one endpoint \u2014 the real database secret now lives server-side only.
+const PROXY_BASE = "https://artracker.konchanpolishing.com/legacy/schedule-tracker";
+const PROXY_SECRET = "Lo1D8xF6QCe18Bx96t2E64rVtpEvy08m";
 
 let readOnly = true;
-let fileSha  = null;
+let data = null;
 
-// Show token field only when admin PIN is typed; pre-fill if already saved
-document.getElementById('passcode-input').addEventListener('input', function(){
-  const show = this.value === PASSCODE_ADMIN;
-  const row = document.getElementById('token-row');
-  row.style.display = show ? 'flex' : 'none';
-  if(show){
-    const saved = localStorage.getItem('gh_tok');
-    if(saved) document.getElementById('token-input').value = saved;
-  }
-});
-
-function checkPasscode(){
-  const val = document.getElementById('passcode-input').value;
-  if(val === PASSCODE_ADMIN){
-    const tok = document.getElementById('token-input').value.trim();
-    if(!tok){ document.getElementById('gate-error').textContent = "Paste your GitHub token."; return; }
-    localStorage.setItem('gh_tok', tok);
-    readOnly = false;
-  } else if(val === PASSCODE_READONLY){
-    readOnly = true;
-  } else {
-    document.getElementById('gate-error').textContent = "Incorrect PIN.";
-    return;
-  }
+function unlock(mode){
+  readOnly = (mode === 'readonly');
+  localStorage.setItem('session', mode);
   document.getElementById('gate').style.display = 'none';
   document.getElementById('loading-screen').style.display = 'flex';
   loadData();
+}
+
+function checkPasscode(){
+  const val = document.getElementById('passcode-input').value;
+  if(val === PASSCODE_ADMIN)         unlock('admin');
+  else if(val === PASSCODE_READONLY) unlock('readonly');
+  else document.getElementById('gate-error').textContent = "Incorrect PIN.";
 }
 document.getElementById('passcode-input').addEventListener('keydown', e => {
   if(e.key === 'Enter') checkPasscode();
 });
 
-let data = null;
+(function(){
+  const saved = localStorage.getItem('session');
+  if(saved === 'admin' || saved === 'readonly') unlock(saved);
+})();
+
+function toArray(val){
+  if(!val) return [];
+  if(Array.isArray(val)) return val;
+  // Firebase sometimes stores arrays as objects with numeric or string keys
+  return Object.values(val);
+}
 
 async function loadData(){
   try{
-    // Public raw URL for reads — no token needed
-    const res = await fetch(RAW_URL + '?t=' + Date.now());
+    const res = await fetch(DB_URL);
     const json = await res.json();
-    data = (json && json.jobs) ? json : null;
-    // Fetch sha separately (needed for saves) only if admin
-    if(!readOnly){
-      const tok = localStorage.getItem('gh_tok');
-      const meta = await fetch(DB_URL, {
-        headers:{ 'Authorization': `Bearer ${tok}`, 'Accept': 'application/vnd.github+json' }
-      }).then(r => r.json());
-      fileSha = meta.sha;
+    if(json){
+      json.jobs   = toArray(json.jobs);
+      json.urgent = toArray(json.urgent);
+      json.visits = toArray(json.visits);
     }
+    data = (json && json.jobs) ? json : null;
   } catch(e){
     console.error("Load failed", e);
     data = null;
   }
   if(!data){
     document.getElementById('loading-screen').innerHTML =
-      '<span style="color:#f0978a">Failed to load data. Check the console for details.</span>';
+      '<span style="color:#f0978a">Failed to load data.</span>';
     return;
   }
   document.getElementById('loading-screen').style.display = 'none';
   document.getElementById('app').style.display = 'block';
   render();
+}
+
+function logout(){
+  localStorage.removeItem('session');
+  location.reload();
 }
 
 function manualRefresh(){
@@ -297,132 +362,196 @@ let saveTimeout;
 function saveData(){
   if(readOnly) return;
   clearTimeout(saveTimeout);
-  const indicator = document.getElementById('save-indicator');
-  indicator.textContent = 'Saving...';
-  saveTimeout = setTimeout(async () => {
+  const ind = document.getElementById('save-indicator');
+  ind.textContent = 'Saving…';
+  saveTimeout = setTimeout(async ()=>{
     try{
-      const tok = localStorage.getItem('gh_tok');
-      const content = btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2))));
-      const res = await fetch(DB_URL, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${tok}`,
-          'Accept': 'application/vnd.github+json',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          message: 'tracker update',
-          content,
-          sha: fileSha
-        })
-      });
-      const result = await res.json();
-      if(result.content && result.content.sha){
-        fileSha = result.content.sha; // update sha for next save
-        indicator.textContent = 'Saved ✓';
-        setTimeout(()=>{indicator.textContent='';}, 1500);
-      } else {
-        throw new Error(result.message || 'unknown error');
-      }
+      await fetch(`${PROXY_BASE}/data`,{method:'PUT',headers:{'Content-Type':'application/json','X-Proxy-Secret':PROXY_SECRET},body:JSON.stringify(data)});
+      ind.textContent = '✓ Saved';
+      setTimeout(()=>{ind.textContent='';},1500);
     } catch(e){
-      console.error(e);
-      indicator.textContent = 'Save failed: ' + e.message;
+      ind.textContent = 'Save failed';
     }
-  }, 500);
+  },600);
 }
 
-function uid(){return 'id'+Math.random().toString(36).slice(2,9);}
+function uid(){ return 'id'+Math.random().toString(36).slice(2,9); }
 
+let addingCard = false;
 function addCard(section){
-  const item = {id:uid(), name:'New Item', loc:'', status: section==='jobs' ? 'upcoming' : section==='urgent' ? 'urgent' : 'check', note:''};
+  // Guard against a fast double-tap/double-click firing this twice and creating two "New Item"
+  // duplicates.
+  if(addingCard) return;
+  addingCard = true;
+  setTimeout(()=>{ addingCard = false; }, 800);
+  const status = section==='jobs' ? 'upcoming' : section==='urgent' ? 'urgent' : 'check';
+  const item = {id:uid(),name:'New Item',loc:'',status,note:''};
   if(section==='jobs'){ item.start=''; item.duration=''; item.finish=''; }
   data[section].push(item);
   saveData();
   render();
+  // open the new card
+  const newId = item.id;
+  setTimeout(()=>{
+    const el = document.getElementById('card-'+newId);
+    if(el){ el.classList.add('open'); el.scrollIntoView({behavior:'smooth',block:'center'}); }
+  },50);
 }
 
 function deleteCard(section, id){
-  data[section] = data[section].filter(i => i.id !== id);
+  if(!confirm('Remove this item?')) return;
+  data[section] = data[section].filter(i=>i.id!==id);
   saveData();
   render();
 }
 
 function updateField(section, id, field, value){
-  const item = data[section].find(i => i.id === id);
-  if(item){ item[field] = value; saveData(); }
+  const item = data[section].find(i=>i.id===id);
+  if(item){ item[field]=value; saveData(); }
 }
 
-function statusBadgeOptions(){
-  return [
-    ['active','Active'],
-    ['upcoming','Upcoming'],
-    ['urgent','Urgent'],
-    ['check','Check/Pending']
-  ];
+function moveCard(fromSection, id, toSection){
+  if(fromSection===toSection) return;
+  const idx = data[fromSection].findIndex(i=>i.id===id);
+  if(idx<0) return;
+  const [item] = data[fromSection].splice(idx,1);
+  data[toSection].push(item);
+  saveData();
+  render();
 }
 
-function renderJobCard(item){
+function reorderCard(section, id, dir){
+  const arr = data[section];
+  const idx = arr.findIndex(i=>i.id===id);
+  const to = idx + dir;
+  if(to<0||to>=arr.length) return;
+  [arr[idx],arr[to]] = [arr[to],arr[idx]];
+  saveData();
+  render();
+  // restore open state
+  setTimeout(()=>{
+    const el = document.getElementById('card-'+id);
+    if(el){ el.classList.add('open'); }
+  },20);
+}
+
+function toggleCard(id){
+  const el = document.getElementById('card-'+id);
+  if(el) el.classList.toggle('open');
+}
+
+function escapeAttr(s){ return (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
+function escapeHTML(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+
+const STATUS_OPTS = [['active','Active'],['upcoming','Upcoming'],['urgent','Urgent'],['check','Pending']];
+const SECTION_OPTS = [['jobs','Jobs'],['urgent','Urgent'],['visits','Visits']];
+
+function statusOpts(cur){
+  return STATUS_OPTS.map(([v,l])=>`<option value="${v}"${cur===v?' selected':''}>${l}</option>`).join('');
+}
+function sectionOpts(cur){
+  return SECTION_OPTS.map(([v,l])=>`<option value="${v}"${cur===v?' selected':''}>${l}</option>`).join('');
+}
+
+function renderCard(section, item, idx, total){
+  const isJob = section==='jobs';
+  const ro = readOnly;
   return `
-  <div class="card ${item.status}">
-    <div class="card-top">
-      <div style="flex:1">
-        <input class="job-name" value="${escapeAttr(item.name)}" onchange="updateField('jobs','${item.id}','name',this.value)" />
-        <input class="job-loc" value="${escapeAttr(item.loc)}" placeholder="Location" onchange="updateField('jobs','${item.id}','loc',this.value)" />
+<div class="card ${item.status}" id="card-${item.id}">
+  <div class="card-header" onclick="toggleCard('${item.id}')">
+    <div class="card-header-text">
+      <div style="font-size:16px;font-weight:700;color:var(--text)">${escapeHTML(item.name)||'&nbsp;'}</div>
+      ${item.loc ? `<div style="font-size:13px;color:var(--muted);margin-top:3px">${escapeHTML(item.loc)}</div>` : ''}
+    </div>
+    <span class="badge ${item.status}">${STATUS_OPTS.find(([v])=>v===item.status)?.[1]||item.status}</span>
+    <span class="card-chevron">›</span>
+  </div>
+  <div class="card-body">
+    <div class="field-row">
+      <span class="field-label">Name</span>
+      <input class="field-input" value="${escapeAttr(item.name)}" placeholder="Job name"
+        onchange="updateField('${section}','${item.id}','name',this.value);document.getElementById('card-${item.id}').querySelector('.card-header-text div').textContent=this.value" ${ro?'disabled':''} />
+    </div>
+    <div class="field-row">
+      <span class="field-label">Location</span>
+      <input class="field-input" value="${escapeAttr(item.loc||'')}" placeholder="Location / GC"
+        onchange="updateField('${section}','${item.id}','loc',this.value)" ${ro?'disabled':''} />
+    </div>
+    <div class="field-row">
+      <span class="field-label">Status</span>
+      <select class="field-select" onchange="updateField('${section}','${item.id}','status',this.value);render()" ${ro?'disabled':''}>${statusOpts(item.status)}</select>
+    </div>
+    ${isJob ? `
+    <div class="field-row">
+      <span class="field-label">Start</span>
+      <input class="field-input" value="${escapeAttr(item.start||'')}" placeholder="Start date"
+        onchange="updateField('${section}','${item.id}','start',this.value)" ${ro?'disabled':''} />
+    </div>
+    <div class="field-row">
+      <span class="field-label">Duration</span>
+      <input class="field-input" value="${escapeAttr(item.duration||'')}" placeholder="e.g. 3 weeks"
+        onchange="updateField('${section}','${item.id}','duration',this.value)" ${ro?'disabled':''} />
+    </div>
+    <div class="field-row">
+      <span class="field-label">Finish</span>
+      <input class="field-input" value="${escapeAttr(item.finish||'')}" placeholder="Est. finish"
+        onchange="updateField('${section}','${item.id}','finish',this.value)" ${ro?'disabled':''} />
+    </div>` : ''}
+    <textarea class="note-textarea" placeholder="Notes…"
+      onchange="updateField('${section}','${item.id}','note',this.value)" ${ro?'disabled':''}>${escapeHTML(item.note||'')}</textarea>
+    ${!ro ? `
+    <div class="card-actions">
+      <div class="reorder-btns">
+        ${idx>0 ? `<button class="reorder-btn" onclick="reorderCard('${section}','${item.id}',-1)" title="Move up">↑</button>` : '<span style="width:36px"></span>'}
+        ${idx<total-1 ? `<button class="reorder-btn" onclick="reorderCard('${section}','${item.id}',1)" title="Move down">↓</button>` : '<span style="width:36px"></span>'}
+        <select class="section-move-select" onchange="moveCard('${section}','${item.id}',this.value)">${sectionOpts(section)}</select>
       </div>
-      <select class="badge-select ${item.status}" onchange="updateField('jobs','${item.id}','status',this.value); this.className='badge-select '+this.value;">
-        ${statusBadgeOptions().map(([v,l])=>`<option value="${v}" ${item.status===v?'selected':''}>${l}</option>`).join('')}
-      </select>
-    </div>
-    <div class="meta-row">
-      <div class="meta-item"><span class="k">Start:</span><input value="${escapeAttr(item.start||'')}" onchange="updateField('jobs','${item.id}','start',this.value)" /></div>
-      <div class="meta-item"><span class="k">Duration:</span><input value="${escapeAttr(item.duration||'')}" onchange="updateField('jobs','${item.id}','duration',this.value)" /></div>
-      <div class="meta-item"><span class="k">Finish:</span><input value="${escapeAttr(item.finish||'')}" onchange="updateField('jobs','${item.id}','finish',this.value)" /></div>
-    </div>
-    <div class="note"><textarea placeholder="Notes..." onchange="updateField('jobs','${item.id}','note',this.value)">${escapeHTML(item.note||'')}</textarea></div>
-    <div class="card-footer"><button class="del-btn" onclick="deleteCard('jobs','${item.id}')">Remove</button></div>
-  </div>`;
+      <button class="del-btn" onclick="deleteCard('${section}','${item.id}')">Remove</button>
+    </div>` : ''}
+  </div>
+</div>`;
 }
-
-function renderSimpleCard(section, item){
-  return `
-  <div class="card ${item.status}">
-    <div class="card-top">
-      <div style="flex:1">
-        <input class="job-name" value="${escapeAttr(item.name)}" onchange="updateField('${section}','${item.id}','name',this.value)" />
-        <input class="job-loc" value="${escapeAttr(item.loc||'')}" placeholder="Location" onchange="updateField('${section}','${item.id}','loc',this.value)" />
-      </div>
-      <select class="badge-select ${item.status}" onchange="updateField('${section}','${item.id}','status',this.value); this.className='badge-select '+this.value;">
-        ${statusBadgeOptions().map(([v,l])=>`<option value="${v}" ${item.status===v?'selected':''}>${l}</option>`).join('')}
-      </select>
-    </div>
-    <div class="note"><textarea placeholder="Notes..." onchange="updateField('${section}','${item.id}','note',this.value)">${escapeHTML(item.note||'')}</textarea></div>
-    <div class="card-footer"><button class="del-btn" onclick="deleteCard('${section}','${item.id}')">Remove</button></div>
-  </div>`;
-}
-
-function escapeAttr(s){ return (s||'').replace(/"/g,'&quot;'); }
-function escapeHTML(s){ return (s||'').replace(/</g,'&lt;'); }
 
 function render(){
-  document.getElementById('jobs-container').innerHTML = data.jobs.map(renderJobCard).join('');
-  document.getElementById('urgent-container').innerHTML = data.urgent.map(i=>renderSimpleCard('urgent',i)).join('');
-  document.getElementById('visits-container').innerHTML = data.visits.map(i=>renderSimpleCard('visits',i)).join('');
-  applyReadOnly();
-}
-
-function applyReadOnly(){
-  // show/hide add buttons
-  document.querySelectorAll('.add-btn').forEach(el => el.style.display = readOnly ? 'none' : '');
-  // show/hide delete buttons
-  document.querySelectorAll('.del-btn').forEach(el => el.style.display = readOnly ? 'none' : '');
-  // disable all editable fields inside cards
-  document.querySelectorAll('.card input, .card textarea, .card select').forEach(el => {
-    el.disabled = readOnly;
-    el.style.opacity = readOnly ? '1' : '';
-    el.style.cursor = readOnly ? 'default' : '';
+  ['jobs','urgent','visits'].forEach(sec => {
+    const arr = data[sec];
+    document.getElementById(sec+'-container').innerHTML =
+      arr.map((item,i)=>renderCard(sec,item,i,arr.length)).join('');
   });
+  // hide FAB in readonly
+  document.querySelectorAll('.add-btn').forEach(el=>el.style.display=readOnly?'none':'');
 }
-</script>
 
+async function backupData(){
+  if(!data) return;
+  const ts = new Date().toISOString().replace(/[:.]/g,'-');
+  const url = `${PROXY_BASE}/backup/${ts}`;
+  const ind = document.getElementById('save-indicator');
+  ind.textContent = 'Backing up…';
+  try{
+    await fetch(url,{method:'PUT',headers:{'Content-Type':'application/json','X-Proxy-Secret':PROXY_SECRET},body:JSON.stringify(data)});
+    ind.textContent = '✓ Backup saved';
+    setTimeout(()=>{ind.textContent='';},2000);
+  } catch(e){
+    ind.textContent = 'Backup failed';
+  }
+}
+
+// FAB
+let fabOpen = false;
+function toggleFab(){
+  fabOpen = !fabOpen;
+  document.getElementById('fab-menu').classList.toggle('open', fabOpen);
+  document.getElementById('fab-btn').textContent = fabOpen ? '✕' : '+';
+}
+function closeFab(){
+  fabOpen = false;
+  document.getElementById('fab-menu').classList.remove('open');
+  document.getElementById('fab-btn').textContent = '+';
+}
+document.addEventListener('click', e => {
+  if(fabOpen && !e.target.closest('.fab')) closeFab();
+});
+</script>
 </body>
 </html>

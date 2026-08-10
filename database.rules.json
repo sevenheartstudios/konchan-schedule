@@ -1,0 +1,12 @@
+{
+  "rules": {
+    "tracker": {
+      ".read": true,
+      ".write": "auth != null"
+    },
+    "backups": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    }
+  }
+}

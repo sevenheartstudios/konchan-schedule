@@ -77,9 +77,12 @@ async function resolveOrganizationId(env) {
   return getByPath(first, "organization.id");
 }
 
-// Derives distinct jobs from recent JobTread documents (Pave has no organization.jobs field),
-// same approach ARTracker's own JobTread integration uses.
-async function searchJobs(searchText, env) {
+// Derives distinct jobs from recent JobTread documents. This is fast (one request) and
+// covers the common case (jobs with recent activity/paperwork), but MISSES any job that has
+// no document among the org's 100 most-recently-created documents overall (e.g. an older job,
+// or one nobody has attached a file to recently) — verified live: a real job named
+// "Diadem Wellington" under account "Ahrens Companies" never appeared via this path.
+async function searchJobsFromDocuments(searchText, env) {
   const organizationId = await resolveOrganizationId(env);
   const needle = (searchText || "").trim().toLowerCase();
   const payload = await jtQuery(
@@ -124,6 +127,68 @@ async function searchJobs(searchText, env) {
     if (results.length >= 20) break;
   }
   return results;
+}
+
+// Fallback: walks every account's jobs directly (organization.accounts.nodes.jobs) — this DOES
+// exist in the Pave API despite earlier assumptions otherwise, and finds jobs regardless of
+// whether they have any documents. Slower (one request per ~25 accounts, sequential pagination
+// required since JobTread returns an opaque nextPage cursor), so only used when the fast
+// document-derived search comes back empty. Capped at 40 pages (~1000 accounts) as a safety net.
+async function searchJobsFromAccounts(searchText, env) {
+  const organizationId = await resolveOrganizationId(env);
+  const needle = (searchText || "").trim().toLowerCase();
+  const results = [];
+  const seen = new Set();
+  let page = null;
+  let pageCount = 0;
+  while (pageCount < 40) {
+    const payload = await jtQuery(
+      {
+        organization: {
+          $: { id: organizationId },
+          accounts: {
+            $: page ? { size: 25, page } : { size: 25 },
+            nextPage: {},
+            nodes: {
+              id: {},
+              name: {},
+              jobs: { nodes: { id: {}, name: {}, number: {}, location: { id: {}, address: {} } } },
+            },
+          },
+        },
+      },
+      env
+    );
+    const accountNodes = getByPath(payload, "organization.accounts.nodes") || [];
+    for (const acc of accountNodes) {
+      const accountId = acc.id || "";
+      const accountName = acc.name || "";
+      const jobNodes = getByPath(acc, "jobs.nodes") || [];
+      for (const job of jobNodes) {
+        const jobId = job.id;
+        if (!jobId || seen.has(jobId)) continue;
+        const jobName = job.name || "";
+        const address = getByPath(job, "location.address") || "";
+        const haystack = `${jobName} ${accountName} ${address}`.toLowerCase();
+        if (needle && !haystack.includes(needle)) continue;
+        seen.add(jobId);
+        results.push({ jobId, accountId, name: jobName, accountName, address });
+        if (results.length >= 20) return results;
+      }
+    }
+    page = getByPath(payload, "organization.accounts.nextPage");
+    pageCount++;
+    if (!page) break;
+  }
+  return results;
+}
+
+async function searchJobs(searchText, env) {
+  const fromDocs = await searchJobsFromDocuments(searchText, env);
+  if (fromDocs.length || !(searchText || "").trim()) return fromDocs;
+  // No hits among recently-active jobs — fall back to a full account/jobs scan so older or
+  // document-less jobs (like "Diadem Wellington") can still be found.
+  return searchJobsFromAccounts(searchText, env);
 }
 
 // Contact lookup. VERIFIED live: email/phone are NOT direct scalar fields on Contact — per

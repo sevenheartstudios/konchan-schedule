@@ -17,6 +17,7 @@
   --urgent:#b94a3c;
   --upcoming:#3a6ea5;
   --check:#7a6fa8;
+  --closed:#5a6472;
   --text:#eae6dd;
   --muted:#8a93a0;
   --line:#2a323b;
@@ -83,6 +84,11 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
   margin:20px 0 10px;display:flex;align-items:center;gap:10px;
 }
 .section-label::after{content:"";flex:1;height:1px;background:var(--line);}
+.closed-section-label{cursor:pointer;user-select:none;}
+.closed-section-label .card-chevron{transition:transform 0.2s;}
+.closed-section-label.open .card-chevron{transform:rotate(90deg);}
+.closed-container{display:none;}
+.closed-container.open{display:block;}
 
 /* ---- CARDS ---- */
 .card{
@@ -94,6 +100,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .card.upcoming::before{background:var(--upcoming);}
 .card.urgent::before{background:var(--urgent);}
 .card.check::before{background:var(--check);}
+.card.closed::before{background:var(--closed);}
 
 /* Card header row — always visible */
 .card-header{
@@ -123,6 +130,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .badge.upcoming{background:rgba(58,110,165,0.2);color:#8ec1f0;}
 .badge.urgent{background:rgba(185,74,60,0.2);color:#f0978a;}
 .badge.check{background:rgba(122,111,168,0.2);color:#c4b8ef;}
+.badge.closed{background:rgba(90,100,114,0.25);color:#aeb6c0;}
 
 /* Expandable body */
 .card-body{display:none;padding:0 14px 14px 18px;border-top:1px solid var(--line);}
@@ -332,6 +340,12 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:16px 0 4px;}
 
     <div class="section-label">Site Visits &amp; Status Checks</div>
     <div id="visits-container"></div>
+
+    <div class="section-label closed-section-label" id="closed-label" onclick="toggleClosedSection()">
+      <span id="closed-label-text">Closed</span>
+      <span class="card-chevron">›</span>
+    </div>
+    <div id="closed-container" class="closed-container"></div>
 
     <footer>Konchan Polishing / Expert Concrete Polishing, Inc. — Inverness, FL</footer>
   </div>
@@ -861,7 +875,7 @@ function toggleCard(id){
 function escapeAttr(s){ return (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
 function escapeHTML(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
 
-const STATUS_OPTS = [['active','Active'],['upcoming','Upcoming'],['urgent','Urgent'],['check','Pending']];
+const STATUS_OPTS = [['active','Active'],['upcoming','Upcoming'],['urgent','Urgent'],['check','Pending'],['closed','Closed']];
 const SECTION_OPTS = [['jobs','Jobs'],['urgent','Urgent'],['visits','Visits']];
 
 function statusOpts(cur){
@@ -964,12 +978,27 @@ function renderCard(section, item, idx, total){
 </div>`;
 }
 
+let closedSectionOpen = false;
+function toggleClosedSection(){
+  closedSectionOpen = !closedSectionOpen;
+  document.getElementById('closed-container').classList.toggle('open', closedSectionOpen);
+  document.getElementById('closed-label').classList.toggle('open', closedSectionOpen);
+}
+
 function render(){
+  const closedCards = [];
   ['jobs','urgent','visits'].forEach(sec => {
     const arr = data[sec];
-    document.getElementById(sec+'-container').innerHTML =
-      arr.map((item,i)=>renderCard(sec,item,i,arr.length)).join('');
+    const openHTML = [];
+    arr.forEach((item,i) => {
+      const html = renderCard(sec,item,i,arr.length);
+      if(item.status==='closed') closedCards.push(html);
+      else openHTML.push(html);
+    });
+    document.getElementById(sec+'-container').innerHTML = openHTML.join('');
   });
+  document.getElementById('closed-container').innerHTML = closedCards.join('');
+  document.getElementById('closed-label-text').textContent = `Closed (${closedCards.length})`;
   // hide FAB in readonly; the Job FAB item additionally requires super-admin
   document.querySelectorAll('.add-btn').forEach(el=>el.style.display=readOnly?'none':'');
   const fabJobItem = document.getElementById('fab-job-item');

@@ -1,2 +1,4 @@
 .claude/
 .firebase/
+worker/.wrangler/
+worker/node_modules/

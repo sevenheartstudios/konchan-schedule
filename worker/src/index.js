@@ -1,0 +1,190 @@
+// JobTread integration proxy (Cloudflare Worker) — secure replacement for the
+// Google Apps Script proxy, which was blocked by a Workspace admin policy that
+// disallows anonymous execution of Apps Script web apps.
+//
+// ONE-TIME SETUP:
+//   1. `wrangler secret put JOBTREAD_GRANT_KEY`   (paste the real JobTread API grant key)
+//   2. `wrangler secret put JT_PROXY_SECRET`      (any random string; also goes into
+//      index.html's JOBTREAD_PROXY_KEY constant — gates access to this proxy, the real
+//      grant key never leaves this Worker)
+//   3. Optional: `wrangler secret put JOBTREAD_ORGANIZATION_ID` to skip auto-resolution.
+//   4. `wrangler deploy` — copy the resulting workers.dev URL into index.html's
+//      JOBTREAD_PROXY_URL constant.
+//
+// Endpoints (GET):
+//   ?action=jtSearch&q=<text>&key=<secret>
+//   ?action=jtJobDetail&jobId=&accountId=&key=<secret>
+
+const JOBTREAD_PAVE_URL = "https://api.jobtread.com/pave";
+const ALLOWED_ORIGINS = new Set([
+  "https://konchan-schedule.web.app",
+  "https://konchan-schedule.firebaseapp.com",
+]);
+
+function corsHeaders(origin) {
+  const allow = ALLOWED_ORIGINS.has(origin) ? origin : "https://konchan-schedule.web.app";
+  return {
+    "Access-Control-Allow-Origin": allow,
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+  };
+}
+
+function jsonResponse(obj, origin) {
+  return new Response(JSON.stringify(obj), {
+    headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
+  });
+}
+
+function checkSecret(url, env) {
+  const expected = env.JT_PROXY_SECRET;
+  return !!expected && url.searchParams.get("key") === expected;
+}
+
+async function jtQuery(query, env) {
+  const grantKey = env.JOBTREAD_GRANT_KEY;
+  if (!grantKey) throw new Error("JOBTREAD_GRANT_KEY secret is not set");
+  const res = await fetch(JOBTREAD_PAVE_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query: { $: { grantKey, notify: false }, ...query } }),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`JobTread request failed (${res.status}): ${text.slice(0, 300)}`);
+  }
+  const payload = JSON.parse(text || "{}");
+  if (payload.errors && payload.errors.length) {
+    const first = payload.errors[0];
+    throw new Error(`JobTread query error: ${first.message || JSON.stringify(first)}`);
+  }
+  return payload;
+}
+
+function getByPath(obj, path) {
+  return path.split(".").reduce((acc, key) => (acc && typeof acc === "object" ? acc[key] : undefined), obj);
+}
+
+async function resolveOrganizationId(env) {
+  if (env.JOBTREAD_ORGANIZATION_ID) return env.JOBTREAD_ORGANIZATION_ID;
+  const payload = await jtQuery(
+    { currentGrant: { user: { memberships: { nodes: { id: {}, organization: { id: {}, name: {} } } } } } },
+    env
+  );
+  const nodes = getByPath(payload, "currentGrant.user.memberships.nodes") || [];
+  const first = nodes[0];
+  if (!first) throw new Error("Unable to resolve JobTread organization from the grant");
+  return getByPath(first, "organization.id");
+}
+
+// Derives distinct jobs from recent JobTread documents (Pave has no organization.jobs field),
+// same approach ARTracker's own JobTread integration uses.
+async function searchJobs(searchText, env) {
+  const organizationId = await resolveOrganizationId(env);
+  const needle = (searchText || "").trim().toLowerCase();
+  const payload = await jtQuery(
+    {
+      organization: {
+        $: { id: organizationId },
+        documents: {
+          $: { size: 100, sortBy: [{ field: "createdAt", order: "desc" }] },
+          nodes: {
+            id: {},
+            job: {
+              id: {},
+              name: {},
+              number: {},
+              location: { id: {}, name: {}, address: {}, account: { id: {}, name: {} } },
+            },
+          },
+        },
+      },
+    },
+    env
+  );
+  const nodes = getByPath(payload, "organization.documents.nodes") || [];
+  const seen = new Set();
+  const results = [];
+  for (const node of nodes) {
+    const jobId = getByPath(node, "job.id");
+    if (!jobId || seen.has(jobId)) continue;
+    const jobName = getByPath(node, "job.name") || "";
+    const accountName = getByPath(node, "job.location.account.name") || "";
+    const address = getByPath(node, "job.location.address") || "";
+    const haystack = `${jobName} ${accountName} ${address}`.toLowerCase();
+    if (needle && !haystack.includes(needle)) continue;
+    seen.add(jobId);
+    results.push({
+      jobId,
+      accountId: getByPath(node, "job.location.account.id") || "",
+      name: jobName,
+      accountName,
+      address,
+    });
+    if (results.length >= 20) break;
+  }
+  return results;
+}
+
+// Best-effort contact lookup — several field shapes are probed since JobTread's exact
+// contact schema. VERIFIED live: account.contacts.nodes only exposes id/name/title on this
+// tenant — no email/phone field exists on Contact (confirmed via schema-error probing; every
+// email/phone field name guess was rejected by JobTread's Pave API with "field does not exist").
+async function fetchAccountContact(accountId, env) {
+  if (!accountId) return { name: "", email: "", phone: "" };
+  const payload = await jtQuery({ account: { $: { id: accountId }, contacts: { nodes: { id: {}, name: {} } } } }, env);
+  const contacts = getByPath(payload, "account.contacts.nodes") || [];
+  const first = contacts[0];
+  return { name: (first && first.name) || "", email: "", phone: "" };
+}
+
+// PDF take-off lookup. VERIFIED live: job.files.nodes exposes id/name/url/type (type is a MIME
+// type like "application/pdf", not "contentType" as originally guessed).
+async function fetchJobFiles(jobId, env) {
+  if (!jobId) return [];
+  const payload = await jtQuery({ job: { $: { id: jobId }, files: { nodes: { id: {}, name: {}, url: {}, type: {} } } } }, env);
+  const nodes = getByPath(payload, "job.files.nodes") || [];
+  return nodes
+    .map((n) => ({ id: n.id || "", name: n.name || "", url: n.url || "", contentType: n.type || "" }))
+    .filter((f) => {
+      const n = f.name.toLowerCase();
+      return n.includes(".pdf") || (f.contentType || "").toLowerCase().includes("pdf") || n.includes("takeoff") || n.includes("take-off");
+    })
+    .sort((a, b) => {
+      const score = (f) => (f.name.toLowerCase().includes("takeoff") || f.name.toLowerCase().includes("take-off") ? 0 : 1);
+      return score(a) - score(b);
+    });
+}
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    const origin = request.headers.get("Origin") || "";
+
+    if (request.method === "OPTIONS") {
+      return new Response(null, { headers: corsHeaders(origin) });
+    }
+
+    const action = url.searchParams.get("action");
+    if (action !== "jtSearch" && action !== "jtJobDetail") {
+      return jsonResponse({ ok: false, error: "Unknown action" }, origin);
+    }
+    if (!checkSecret(url, env)) {
+      return jsonResponse({ ok: false, error: "Unauthorized" }, origin);
+    }
+
+    try {
+      if (action === "jtSearch") {
+        const jobs = await searchJobs(url.searchParams.get("q") || "", env);
+        return jsonResponse({ ok: true, jobs }, origin);
+      }
+      const [contact, files] = await Promise.all([
+        fetchAccountContact(url.searchParams.get("accountId") || "", env),
+        fetchJobFiles(url.searchParams.get("jobId") || "", env),
+      ]);
+      return jsonResponse({ ok: true, contact, files }, origin);
+    } catch (err) {
+      return jsonResponse({ ok: false, error: err.message || String(err) }, origin);
+    }
+  },
+};

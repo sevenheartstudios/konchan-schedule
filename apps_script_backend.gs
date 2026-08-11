@@ -13,6 +13,11 @@ function getDataSheet_() {
 // ===================================================================================
 // JobTread integration (secure proxy)
 //
+// SUPERSEDED 2026-08-10: this Apps Script proxy is blocked by a Google Workspace admin policy
+// that disallows anonymous execution of web apps deployed under dave@konchanpolishing.com. The
+// live proxy is now a Cloudflare Worker (see ScheduleTracker/worker/src/index.js). Kept here for
+// reference only — do not deploy this as the active proxy.
+//
 // ONE-TIME SETUP (do this in the Apps Script editor — never put real secrets in this file):
 //   1. Project Settings (gear icon, left sidebar) > Script Properties > Add script property:
 //        JOBTREAD_GRANT_KEY       = <JobTread API grant key>

@@ -343,8 +343,8 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:16px 0 4px;}
       <input type="text" id="aj-contact" placeholder="Name / phone / email" />
     </div>
     <div class="modal-field" id="aj-takeoff-field" style="display:none;">
-      <label for="aj-takeoff">PDF Take-Off</label>
-      <select id="aj-takeoff"></select>
+      <label>PDF Take-Off(s)</label>
+      <div id="aj-takeoff"></div>
     </div>
     <div class="modal-actions">
       <button class="modal-btn secondary" onclick="closeAddJobModal()">Cancel</button>
@@ -474,6 +474,7 @@ function openAddJobModal(){
   document.getElementById('aj-contact').value = '';
   document.getElementById('aj-takeoff-field').style.display = 'none';
   document.getElementById('aj-takeoff').innerHTML = '';
+  jtSelectedFiles = [];
   document.getElementById('aj-suggestions').classList.remove('open');
   document.getElementById('aj-jt-status').textContent = JOBTREAD_PROXY_URL
     ? 'Start typing to search JobTread jobs.'
@@ -552,15 +553,17 @@ async function selectJobTreadJob(job){
     document.getElementById('aj-contact').value = contactParts.join(' — ');
     jtSelectedFiles = json.files || [];
     const takeoffField = document.getElementById('aj-takeoff-field');
-    const takeoffSelect = document.getElementById('aj-takeoff');
+    const takeoffBox = document.getElementById('aj-takeoff');
     if(jtSelectedFiles.length){
-      takeoffSelect.innerHTML = ['<option value="">— none —</option>']
-        .concat(jtSelectedFiles.map((f,i)=>`<option value="${i}">${escapeAttr(f.name||'Untitled PDF')}</option>`))
-        .join('');
-      takeoffSelect.value = '1';
+      takeoffBox.innerHTML = jtSelectedFiles.map((f,i)=>`
+        <label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-weight:normal;">
+          <input type="checkbox" class="aj-takeoff-check" value="${i}" checked />
+          <span>${escapeHTML(f.name||'Untitled PDF')}</span>
+        </label>`).join('');
       takeoffField.style.display = 'block';
-      statusEl.textContent = 'Matched job loaded from JobTread.';
+      statusEl.textContent = `Matched job loaded from JobTread (${jtSelectedFiles.length} PDF${jtSelectedFiles.length===1?'':'s'} found — all selected by default).`;
     } else {
+      takeoffBox.innerHTML = '';
       takeoffField.style.display = 'none';
       statusEl.textContent = 'Matched job loaded (no PDF take-off found on JobTread).';
     }
@@ -572,9 +575,11 @@ async function selectJobTreadJob(job){
 function submitAddJobModal(){
   const name = document.getElementById('aj-name').value.trim();
   if(!name){ document.getElementById('aj-name').focus(); return; }
-  const takeoffSelect = document.getElementById('aj-takeoff');
-  const takeoffIdx = takeoffSelect && takeoffSelect.value !== '' ? Number(takeoffSelect.value) : -1;
-  const takeoffFile = takeoffIdx >= 0 ? jtSelectedFiles[takeoffIdx] : null;
+  const checked = Array.from(document.querySelectorAll('.aj-takeoff-check:checked'));
+  const takeoffFiles = checked
+    .map(cb => jtSelectedFiles[Number(cb.value)])
+    .filter(Boolean)
+    .map(f => ({ name: f.name || '', url: f.url || '' }));
   const item = {
     id: uid(),
     name,
@@ -585,8 +590,7 @@ function submitAddJobModal(){
     note: '',
     start: '', duration: '', finish: '',
     jtJobId: jtSelectedJob ? jtSelectedJob.jobId : '',
-    takeoffName: takeoffFile ? takeoffFile.name : '',
-    takeoffUrl: takeoffFile ? takeoffFile.url : '',
+    takeoffFiles,
   };
   data.jobs.push(item);
   saveData();
@@ -730,11 +734,19 @@ function renderCard(section, item, idx, total){
       <input class="field-input" value="${escapeAttr(item.finish||'')}" placeholder="Est. finish"
         onchange="updateField('${section}','${item.id}','finish',this.value)" ${ro?'disabled':''} />
     </div>
-    ${item.takeoffUrl ? `
+    ${(() => {
+      const files = (item.takeoffFiles && item.takeoffFiles.length)
+        ? item.takeoffFiles
+        : (item.takeoffUrl ? [{ name: item.takeoffName, url: item.takeoffUrl }] : []);
+      if(!files.length) return '';
+      return `
     <div class="field-row">
-      <span class="field-label">Take-Off</span>
-      <a class="field-input" style="text-decoration:none;display:block" href="${escapeAttr(item.takeoffUrl)}" target="_blank" rel="noopener">📄 ${escapeHTML(item.takeoffName||'View PDF')}</a>
-    </div>` : ''}` : ''}
+      <span class="field-label">Take-Off${files.length>1?'s':''}</span>
+      <div style="display:flex;flex-direction:column;gap:4px;">
+        ${files.map(f => `<a class="field-input" style="text-decoration:none;display:block" href="${escapeAttr(f.url)}" target="_blank" rel="noopener">📄 ${escapeHTML(f.name||'View PDF')}</a>`).join('')}
+      </div>
+    </div>`;
+    })()}` : ''}
     <textarea class="note-textarea" placeholder="Notes…"
       onchange="updateField('${section}','${item.id}','note',this.value)" ${ro?'disabled':''}>${escapeHTML(item.note||'')}</textarea>
     ${!ro ? `

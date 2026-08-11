@@ -126,20 +126,39 @@ async function searchJobs(searchText, env) {
   return results;
 }
 
-// Best-effort contact lookup — several field shapes are probed since JobTread's exact
-// contact schema. VERIFIED live: account.contacts.nodes only exposes id/name/title on this
-// tenant — no email/phone field exists on Contact (confirmed via schema-error probing; every
-// email/phone field name guess was rejected by JobTread's Pave API with "field does not exist").
+// Contact lookup. VERIFIED live: email/phone are NOT direct scalar fields on Contact — per
+// JobTread's own API docs ("Find a Contact by Custom Field Value"), they're stored as
+// customFieldValues where customField.type is "emailAddress" or "phoneNumber". A contact can
+// have multiple phone numbers; all are returned (semicolon-joined) rather than picking just one.
 async function fetchAccountContact(accountId, env) {
   if (!accountId) return { name: "", email: "", phone: "" };
-  const payload = await jtQuery({ account: { $: { id: accountId }, contacts: { nodes: { id: {}, name: {} } } } }, env);
+  const payload = await jtQuery(
+    {
+      account: {
+        $: { id: accountId },
+        contacts: {
+          nodes: {
+            id: {},
+            name: {},
+            customFieldValues: { nodes: { value: {}, customField: { type: {} } } },
+          },
+        },
+      },
+    },
+    env
+  );
   const contacts = getByPath(payload, "account.contacts.nodes") || [];
   const first = contacts[0];
-  return { name: (first && first.name) || "", email: "", phone: "" };
+  if (!first) return { name: "", email: "", phone: "" };
+  const values = getByPath(first, "customFieldValues.nodes") || [];
+  const emails = values.filter((v) => getByPath(v, "customField.type") === "emailAddress").map((v) => v.value);
+  const phones = values.filter((v) => getByPath(v, "customField.type") === "phoneNumber").map((v) => v.value);
+  return { name: first.name || "", email: emails[0] || "", phone: phones.join("; ") };
 }
 
 // PDF take-off lookup. VERIFIED live: job.files.nodes exposes id/name/url/type (type is a MIME
-// type like "application/pdf", not "contentType" as originally guessed).
+// type like "application/pdf", not "contentType" as originally guessed). Returns ALL matching
+// PDFs (a job can have several) — the caller/UI decides which ones to attach.
 async function fetchJobFiles(jobId, env) {
   if (!jobId) return [];
   const payload = await jtQuery({ job: { $: { id: jobId }, files: { nodes: { id: {}, name: {}, url: {}, type: {} } } } }, env);

@@ -302,7 +302,7 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:16px 0 4px;}
     <h2>Konchan Polishing</h2>
     <p>Enter PIN to view schedule</p>
   </div>
-  <input type="password" id="passcode-input" placeholder="••••" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" />
+  <input type="password" id="passcode-input" placeholder="••••" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off" />
   <button onclick="checkPasscode()">Unlock</button>
   <div id="gate-error"></div>
 </div>
@@ -347,7 +347,7 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:16px 0 4px;}
         <span class="fab-label" onclick="addCard('urgent');closeFab()">+ Urgent Item</span>
         <div class="fab-dot" onclick="addCard('urgent');closeFab()">⚡</div>
       </div>
-      <div class="fab-item">
+      <div class="fab-item" id="fab-job-item">
         <span class="fab-label" onclick="openAddJobModal();closeFab()">+ Job</span>
         <div class="fab-dot" onclick="openAddJobModal();closeFab()">🏗</div>
       </div>
@@ -394,8 +394,9 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:16px 0 4px;}
 </div>
 
 <script>
-const PASSCODE_READONLY = "2026";
-const PASSCODE_ADMIN    = "1260";
+const PASSCODE_READONLY   = "2026";
+const PASSCODE_ADMIN      = "1260"; // full edit access, but cannot Add Job or Re-import from JobTread
+const PASSCODE_SUPERADMIN = "12601260"; // all access, including Add Job + Re-import
 const DB_URL     = "https://konchan-schedule-default-rtdb.firebaseio.com/tracker.json";
 // Writes go through ARTracker's secured proxy instead of talking to Firebase directly. The old
 // version of this app embedded a Firebase Realtime Database legacy secret directly in this file,
@@ -413,10 +414,12 @@ const JOBTREAD_PROXY_URL = "https://konchan-schedule-jobtread-proxy.scheduletrac
 const JOBTREAD_PROXY_KEY = "W0AxKv9cTFkzdwg7rlouCDpJLYah5M4f";
 
 let readOnly = true;
+let isSuperAdmin = false; // only the 8-digit passcode can Add Job / Re-import from JobTread
 let data = null;
 
 function unlock(mode){
   readOnly = (mode === 'readonly');
+  isSuperAdmin = (mode === 'superadmin');
   localStorage.setItem('session', mode);
   document.getElementById('gate').style.display = 'none';
   document.getElementById('loading-screen').style.display = 'flex';
@@ -425,7 +428,8 @@ function unlock(mode){
 
 function checkPasscode(){
   const val = document.getElementById('passcode-input').value;
-  if(val === PASSCODE_ADMIN)         unlock('admin');
+  if(val === PASSCODE_SUPERADMIN)    unlock('superadmin');
+  else if(val === PASSCODE_ADMIN)    unlock('admin');
   else if(val === PASSCODE_READONLY) unlock('readonly');
   else document.getElementById('gate-error').textContent = "Incorrect PIN.";
 }
@@ -435,7 +439,7 @@ document.getElementById('passcode-input').addEventListener('keydown', e => {
 
 (function(){
   const saved = localStorage.getItem('session');
-  if(saved === 'admin' || saved === 'readonly') unlock(saved);
+  if(saved === 'admin' || saved === 'readonly' || saved === 'superadmin') unlock(saved);
 })();
 
 function toArray(val){
@@ -506,7 +510,7 @@ let jtSelectedFiles = [];
 let jtSelectedBid = null; // {id, name, total, lineItems} once a matched job's bid is loaded
 
 function openAddJobModal(){
-  if(readOnly) return;
+  if(readOnly || !isSuperAdmin) return;
   jtSelectedJob = null;
   jtSelectedFiles = [];
   jtSelectedBid = null;
@@ -714,6 +718,7 @@ function renderBidSummary(){
 }
 
 function submitAddJobModal(){
+  if(readOnly || !isSuperAdmin) return;
   const name = document.getElementById('aj-name').value.trim();
   if(!name){ document.getElementById('aj-name').focus(); return; }
   const checked = Array.from(document.querySelectorAll('.aj-takeoff-check:checked'));
@@ -752,7 +757,7 @@ function submitAddJobModal(){
 // currently attached (including any files the user had trashed) — used to restore a
 // deleted attachment or pick up newly-added JobTread files without re-adding the whole job.
 async function reimportJobTreadDocuments(section, id){
-  if(readOnly) return;
+  if(readOnly || !isSuperAdmin) return;
   const item = data[section].find(i=>i.id===id);
   if(!item || !item.jtJobId) return;
   if(!JOBTREAD_PROXY_URL){ alert('JobTread is not configured.'); return; }
@@ -943,7 +948,7 @@ function renderCard(section, item, idx, total){
     })()}` : ''}
     <textarea class="note-textarea" placeholder="Notes…"
       onchange="updateField('${section}','${item.id}','note',this.value)" ${ro?'disabled':''}>${escapeHTML(item.note||'')}</textarea>
-    ${!ro && isJob && item.jtJobId ? `
+    ${!ro && isSuperAdmin && isJob && item.jtJobId ? `
     <button type="button" class="reimport-btn" id="reimport-btn-${item.id}" style="margin-top:14px;" onclick="reimportJobTreadDocuments('${section}','${item.id}')">🔄 Re-import from JobTread</button>` : ''}
     ${!ro ? `
     <div class="card-actions">
@@ -964,8 +969,10 @@ function render(){
     document.getElementById(sec+'-container').innerHTML =
       arr.map((item,i)=>renderCard(sec,item,i,arr.length)).join('');
   });
-  // hide FAB in readonly
+  // hide FAB in readonly; the Job FAB item additionally requires super-admin
   document.querySelectorAll('.add-btn').forEach(el=>el.style.display=readOnly?'none':'');
+  const fabJobItem = document.getElementById('fab-job-item');
+  if(fabJobItem) fabJobItem.style.display = (readOnly || !isSuperAdmin) ? 'none' : '';
 }
 
 async function backupData(){

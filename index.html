@@ -816,6 +816,7 @@ function addCard(section){
 }
 
 function deleteCard(section, id){
+  if(section==='jobs' && !isSuperAdmin) return; // only super-admin can remove jobs
   if(!confirm('Remove this item?')) return;
   data[section] = data[section].filter(i=>i.id!==id);
   saveData();
@@ -957,7 +958,7 @@ function renderCard(section, item, idx, total){
         ${idx<total-1 ? `<button class="reorder-btn" onclick="reorderCard('${section}','${item.id}',1)" title="Move down">↓</button>` : '<span style="width:36px"></span>'}
         <select class="section-move-select" onchange="moveCard('${section}','${item.id}',this.value)">${sectionOpts(section)}</select>
       </div>
-      <button class="del-btn" onclick="deleteCard('${section}','${item.id}')">Remove</button>
+      ${(!isJob || isSuperAdmin) ? `<button class="del-btn" onclick="deleteCard('${section}','${item.id}')">Remove</button>` : ''}
     </div>` : ''}
   </div>
 </div>`;

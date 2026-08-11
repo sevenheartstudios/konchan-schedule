@@ -175,6 +175,12 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
   padding:4px 6px;border-radius:6px;flex-shrink:0;line-height:1;
 }
 .aj-takeoff-remove:hover{color:var(--urgent);}
+.aj-takeoff-thumb{
+  flex-shrink:0;width:44px;height:56px;border:1px solid var(--line);border-radius:6px;
+  overflow:hidden;display:flex;align-items:center;justify-content:center;background:#11161b;position:relative;
+}
+.aj-takeoff-thumb canvas{max-width:100%;max-height:100%;display:block;}
+.aj-takeoff-thumb.aj-takeoff-thumb-error::after{content:"\1F4C4";font-size:20px;}
 .section-move-select{
   background:#11161b;border:1px solid var(--line);color:var(--muted);
   padding:7px 28px 7px 10px;border-radius:8px;font-size:12px;cursor:pointer;
@@ -266,6 +272,7 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:16px 0 4px;}
 .modal-btn.primary{background:var(--accent);color:#1a1300;}
 .modal-btn.secondary{background:var(--panel2);color:var(--text);border:1px solid var(--line);}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer></script>
 </head>
 <body>
 
@@ -581,6 +588,9 @@ function renderTakeoffChecklist(){
   }
   takeoffBox.innerHTML = jtSelectedFiles.map((f,i)=>`
     <div class="aj-takeoff-row">
+      <a class="aj-takeoff-thumb" href="${escapeAttr(f.url)}" target="_blank" rel="noopener" title="Open full PDF">
+        <canvas data-url="${escapeAttr(f.url)}"></canvas>
+      </a>
       <label>
         <input type="checkbox" class="aj-takeoff-check" value="${i}" ${f._checked===false?'':'checked'} />
         <span>${escapeHTML(f.name||'Untitled PDF')}</span>
@@ -597,6 +607,48 @@ function renderTakeoffChecklist(){
       renderTakeoffChecklist();
     });
   });
+  takeoffBox.querySelectorAll('.aj-takeoff-thumb canvas').forEach(canvas=>{
+    renderPdfThumbnail(canvas.dataset.url, canvas);
+  });
+}
+
+let pdfjsReadyPromise = null;
+function ensurePdfJs(){
+  if(pdfjsReadyPromise) return pdfjsReadyPromise;
+  pdfjsReadyPromise = new Promise((resolve, reject)=>{
+    const start = ()=>{
+      if(!window.pdfjsLib){ reject(new Error('pdfjsLib not available')); return; }
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      resolve(window.pdfjsLib);
+    };
+    if(window.pdfjsLib){ start(); return; }
+    let tries = 0;
+    const wait = ()=>{
+      if(window.pdfjsLib){ start(); return; }
+      if(++tries > 100){ reject(new Error('pdfjsLib failed to load')); return; }
+      setTimeout(wait, 100);
+    };
+    wait();
+  });
+  return pdfjsReadyPromise;
+}
+
+async function renderPdfThumbnail(url, canvas){
+  try{
+    const pdfjsLib = await ensurePdfJs();
+    const pdf = await pdfjsLib.getDocument(url).promise;
+    const page = await pdf.getPage(1);
+    const unscaledViewport = page.getViewport({ scale: 1 });
+    const targetWidth = 88, targetHeight = 112; // 2x the CSS box size for a crisp retina thumbnail
+    const scale = Math.min(targetWidth / unscaledViewport.width, targetHeight / unscaledViewport.height);
+    const viewport = page.getViewport({ scale });
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d');
+    await page.render({ canvasContext: ctx, viewport }).promise;
+  } catch(e){
+    canvas.closest('.aj-takeoff-thumb')?.classList.add('aj-takeoff-thumb-error');
+  }
 }
 
 function submitAddJobModal(){

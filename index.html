@@ -181,6 +181,27 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 }
 .aj-takeoff-thumb canvas{max-width:100%;max-height:100%;display:block;}
 .aj-takeoff-thumb.aj-takeoff-thumb-error::after{content:"\1F4C4";font-size:48px;}
+.bid-summary-box{
+  flex:1;min-width:0;background:#11161b;border:1px solid var(--line);border-radius:8px;
+  padding:10px 12px;font-size:13px;
+}
+.bid-summary-doc-name{font-weight:600;color:var(--text);margin-bottom:6px;}
+.bid-summary-lines{display:flex;flex-direction:column;gap:4px;margin-bottom:8px;}
+.bid-summary-line{display:flex;justify-content:space-between;gap:10px;color:var(--muted);}
+.bid-summary-line span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.bid-summary-line span:last-child{flex-shrink:0;}
+.bid-summary-empty{color:var(--muted);font-style:italic;}
+.bid-summary-total{
+  display:flex;justify-content:space-between;font-weight:700;color:var(--text);
+  padding-top:8px;border-top:1px solid var(--line);
+}
+.reimport-btn{
+  background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+  font-size:12px;cursor:pointer;padding:8px 12px;border-radius:8px;width:100%;
+  display:flex;align-items:center;justify-content:center;gap:6px;
+}
+.reimport-btn:hover{color:var(--text);border-color:var(--accent);}
+.reimport-btn:disabled{opacity:0.6;cursor:default;}
 .section-move-select{
   background:#11161b;border:1px solid var(--line);color:var(--muted);
   padding:7px 28px 7px 10px;border-radius:8px;font-size:12px;cursor:pointer;
@@ -361,6 +382,10 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:16px 0 4px;}
       <label>PDF Take-Off(s)</label>
       <div id="aj-takeoff"></div>
     </div>
+    <div class="modal-field" id="aj-bid-field" style="display:none;">
+      <label>Bid Summary</label>
+      <div id="aj-bid"></div>
+    </div>
     <div class="modal-actions">
       <button class="modal-btn secondary" onclick="closeAddJobModal()">Cancel</button>
       <button class="modal-btn primary" onclick="submitAddJobModal()">Add Job</button>
@@ -478,17 +503,21 @@ function uid(){ return 'id'+Math.random().toString(36).slice(2,9); }
 let jtSearchTimer = null;
 let jtSelectedJob = null; // {jobId, accountId, name, accountName, address} once a suggestion is picked
 let jtSelectedFiles = [];
+let jtSelectedBid = null; // {id, name, total, lineItems} once a matched job's bid is loaded
 
 function openAddJobModal(){
   if(readOnly) return;
   jtSelectedJob = null;
   jtSelectedFiles = [];
+  jtSelectedBid = null;
   document.getElementById('aj-name').value = '';
   document.getElementById('aj-loc').value = '';
   document.getElementById('aj-address').value = '';
   document.getElementById('aj-contact').value = '';
   document.getElementById('aj-takeoff-field').style.display = 'none';
   document.getElementById('aj-takeoff').innerHTML = '';
+  document.getElementById('aj-bid-field').style.display = 'none';
+  document.getElementById('aj-bid').innerHTML = '';
   jtSelectedFiles = [];
   document.getElementById('aj-suggestions').classList.remove('open');
   document.getElementById('aj-jt-status').textContent = JOBTREAD_PROXY_URL
@@ -568,6 +597,8 @@ async function selectJobTreadJob(job){
     document.getElementById('aj-contact').value = contactParts.join(' — ');
     jtSelectedFiles = json.files || [];
     renderTakeoffChecklist();
+    jtSelectedBid = json.bid || null;
+    renderBidSummary();
     if(jtSelectedFiles.length){
       statusEl.textContent = `Matched job loaded from JobTread (${jtSelectedFiles.length} PDF${jtSelectedFiles.length===1?'':'s'} found — all selected by default, trash any you don't want).`;
     } else {
@@ -651,6 +682,37 @@ async function renderPdfThumbnail(url, canvas){
   }
 }
 
+function money(n){
+  const v = Number(n) || 0;
+  return '$' + v.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+function bidSummaryHTML(bid){
+  const lines = (bid && bid.lineItems) || [];
+  const lineRows = lines.map(li => `
+    <div class="bid-summary-line">
+      <span>${escapeHTML(li.name||'\u2014')}${li.quantity!=null && li.quantity!=='' ? ` \u00d7 ${escapeHTML(String(li.quantity))}` : ''}</span>
+      <span>${money(li.price)}</span>
+    </div>`).join('');
+  return `
+    ${bid && bid.name ? `<div class="bid-summary-doc-name">${escapeHTML(bid.name)}</div>` : ''}
+    <div class="bid-summary-lines">${lineRows || '<div class="bid-summary-empty">No line items found.</div>'}</div>
+    <div class="bid-summary-total"><span>Total</span><span>${money(bid ? bid.total : 0)}</span></div>
+  `;
+}
+
+function renderBidSummary(){
+  const bidField = document.getElementById('aj-bid-field');
+  const bidBox = document.getElementById('aj-bid');
+  if(!jtSelectedBid){
+    bidBox.innerHTML = '';
+    bidField.style.display = 'none';
+    return;
+  }
+  bidBox.innerHTML = `<div class="bid-summary-box">${bidSummaryHTML(jtSelectedBid)}</div>`;
+  bidField.style.display = 'block';
+}
+
 function submitAddJobModal(){
   const name = document.getElementById('aj-name').value.trim();
   if(!name){ document.getElementById('aj-name').focus(); return; }
@@ -669,7 +731,11 @@ function submitAddJobModal(){
     note: '',
     start: '', duration: '', finish: '',
     jtJobId: jtSelectedJob ? jtSelectedJob.jobId : '',
+    jtAccountId: jtSelectedJob ? (jtSelectedJob.accountId || '') : '',
     takeoffFiles,
+    bidDocName: jtSelectedBid ? (jtSelectedBid.name || '') : '',
+    bidTotal: jtSelectedBid ? jtSelectedBid.total : null,
+    bidLineItems: jtSelectedBid ? (jtSelectedBid.lineItems || []) : [],
   };
   data.jobs.push(item);
   saveData();
@@ -680,6 +746,47 @@ function submitAddJobModal(){
     const el = document.getElementById('card-'+newId);
     if(el){ el.classList.add('open'); el.scrollIntoView({behavior:'smooth',block:'center'}); }
   },50);
+}
+
+// Re-fetch a JobTread-linked job's PDFs + bid info from scratch, replacing whatever is
+// currently attached (including any files the user had trashed) — used to restore a
+// deleted attachment or pick up newly-added JobTread files without re-adding the whole job.
+async function reimportJobTreadDocuments(section, id){
+  if(readOnly) return;
+  const item = data[section].find(i=>i.id===id);
+  if(!item || !item.jtJobId) return;
+  if(!JOBTREAD_PROXY_URL){ alert('JobTread is not configured.'); return; }
+  if(!confirm("This will remove the take-off PDFs and bid info currently attached to this job, and re-fetch everything fresh from JobTread. Continue?")) return;
+  const btn = document.getElementById('reimport-btn-'+id);
+  if(btn){ btn.disabled = true; btn.textContent = 'Importing\u2026'; }
+  try{
+    const url = `${JOBTREAD_PROXY_URL}?action=jtJobDetail&jobId=${encodeURIComponent(item.jtJobId)}&accountId=${encodeURIComponent(item.jtAccountId||'')}&key=${encodeURIComponent(JOBTREAD_PROXY_KEY)}`;
+    const res = await fetch(url);
+    const json = await res.json();
+    if(!json.ok){
+      alert(json.error || 'Re-import failed.');
+      return;
+    }
+    const files = json.files || [];
+    item.takeoffFiles = files.map(f => ({ name: f.name || '', url: f.url || '' }));
+    delete item.takeoffName;
+    delete item.takeoffUrl;
+    const bid = json.bid || null;
+    item.bidDocName = bid ? (bid.name || '') : '';
+    item.bidTotal = bid ? bid.total : null;
+    item.bidLineItems = bid ? (bid.lineItems || []) : [];
+    saveData();
+    render();
+    setTimeout(()=>{
+      const el = document.getElementById('card-'+id);
+      if(el){ el.classList.add('open'); }
+    },50);
+  } catch(e){
+    alert('Re-import failed.');
+  } finally {
+    const btnAgain = document.getElementById('reimport-btn-'+id);
+    if(btnAgain){ btnAgain.disabled = false; btnAgain.textContent = '\ud83d\udd04 Re-import from JobTread'; }
+  }
 }
 
 let addingCard = false;
@@ -825,9 +932,19 @@ function renderCard(section, item, idx, total){
         ${files.map(f => `<a class="field-input" style="text-decoration:none;display:block" href="${escapeAttr(f.url)}" target="_blank" rel="noopener">📄 ${escapeHTML(f.name||'View PDF')}</a>`).join('')}
       </div>
     </div>`;
+    })()}
+    ${(() => {
+      if(item.bidTotal==null && !(item.bidLineItems && item.bidLineItems.length)) return '';
+      return `
+    <div class="field-row" style="align-items:flex-start;">
+      <span class="field-label">Bid</span>
+      <div class="bid-summary-box">${bidSummaryHTML({name:item.bidDocName, total:item.bidTotal, lineItems:item.bidLineItems})}</div>
+    </div>`;
     })()}` : ''}
     <textarea class="note-textarea" placeholder="Notes…"
       onchange="updateField('${section}','${item.id}','note',this.value)" ${ro?'disabled':''}>${escapeHTML(item.note||'')}</textarea>
+    ${!ro && isJob && item.jtJobId ? `
+    <button type="button" class="reimport-btn" id="reimport-btn-${item.id}" style="margin-top:14px;" onclick="reimportJobTreadDocuments('${section}','${item.id}')">🔄 Re-import from JobTread</button>` : ''}
     ${!ro ? `
     <div class="card-actions">
       <div class="reorder-btns">

@@ -175,6 +175,59 @@ async function fetchJobFiles(jobId, env) {
     });
 }
 
+// Bid line items + total. job.documents.nodes exposes id/name/type/createdAt (confirmed
+// working elsewhere in this project); the Bid document's `type` enum value is
+// "customerOrder" (JobTread's internal name for what's shown to users as "Customer Order
+// (Bid)"). Picks the most-recently-created matching document, then fetches its full line-item
+// breakdown + total via a separate document-by-id query (same pattern as ARTracker's own Bids
+// integration). Returns null (rather than throwing) on any failure so a schema surprise here
+// never breaks the contact/files half of jtJobDetail.
+async function fetchJobBid(jobId, env) {
+  if (!jobId) return null;
+  try {
+    const listPayload = await jtQuery(
+      { job: { $: { id: jobId }, documents: { nodes: { id: {}, name: {}, type: {}, createdAt: {} } } } },
+      env
+    );
+    const docs = getByPath(listPayload, "job.documents.nodes") || [];
+    const bidDocs = docs.filter((d) => d.type === "customerOrder");
+    if (!bidDocs.length) return null;
+    bidDocs.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    const bidDocId = bidDocs[0].id;
+
+    const detailPayload = await jtQuery(
+      {
+        document: {
+          $: { id: bidDocId },
+          id: {},
+          name: {},
+          price: {},
+          costItems: {
+            nodes: { id: {}, name: {}, description: {}, quantity: {}, price: {}, costType: { name: {} } },
+          },
+        },
+      },
+      env
+    );
+    const doc = getByPath(detailPayload, "document") || {};
+    const lineItems = (getByPath(doc, "costItems.nodes") || []).map((n) => ({
+      name: n.name || "",
+      description: n.description || "",
+      quantity: n.quantity != null ? n.quantity : null,
+      price: n.price != null ? Number(n.price) : 0,
+      costType: getByPath(n, "costType.name") || "",
+    }));
+    return {
+      id: doc.id || bidDocId,
+      name: doc.name || "",
+      total: Number(doc.price || 0),
+      lineItems,
+    };
+  } catch (err) {
+    return null;
+  }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -197,11 +250,12 @@ export default {
         const jobs = await searchJobs(url.searchParams.get("q") || "", env);
         return jsonResponse({ ok: true, jobs }, origin);
       }
-      const [contact, files] = await Promise.all([
+      const [contact, files, bid] = await Promise.all([
         fetchAccountContact(url.searchParams.get("accountId") || "", env),
         fetchJobFiles(url.searchParams.get("jobId") || "", env),
+        fetchJobBid(url.searchParams.get("jobId") || "", env),
       ]);
-      return jsonResponse({ ok: true, contact, files }, origin);
+      return jsonResponse({ ok: true, contact, files, bid }, origin);
     } catch (err) {
       return jsonResponse({ ok: false, error: err.message || String(err) }, origin);
     }

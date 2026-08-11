@@ -381,6 +381,12 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:16px 0 4px;}
       <div class="jt-hint" id="aj-jt-status"></div>
     </div>
     <div class="modal-field">
+      <label>Or Import From a Bid PDF</label>
+      <label class="modal-btn secondary" for="aj-bid-pdf-input" style="display:block;text-align:center;cursor:pointer;">📄 Choose Bid PDF…</label>
+      <input type="file" id="aj-bid-pdf-input" accept="application/pdf" style="display:none;" onchange="onBidPdfSelected(this.files[0]); this.value='';" />
+      <div class="jt-hint" id="aj-bid-pdf-status"></div>
+    </div>
+    <div class="modal-field">
       <label for="aj-loc">Location / GC</label>
       <input type="text" id="aj-loc" placeholder="Customer / general contractor" />
     </div>
@@ -541,6 +547,7 @@ function openAddJobModal(){
   document.getElementById('aj-jt-status').textContent = JOBTREAD_PROXY_URL
     ? 'Start typing to search JobTread jobs.'
     : '';
+  document.getElementById('aj-bid-pdf-status').textContent = '';
   document.getElementById('add-job-overlay').classList.add('open');
   setTimeout(()=>document.getElementById('aj-name').focus(), 50);
 }
@@ -624,6 +631,141 @@ async function selectJobTreadJob(job){
     }
   } catch(e){
     statusEl.textContent = 'Could not load contact/take-off info; enter manually.';
+  }
+}
+
+// ---- Manual Bid PDF import (Add Job modal) ----
+// Alternative to JobTread search: parse one of Konchan's own uploaded Bid PDFs client-side
+// (via pdf.js) and pull the same info the JobTread flow would — GC/contact, job address, and
+// bid line items/total — straight from the PDF text. Text items are reconstructed into lines
+// by y-position (then sorted by x within a line) so the two-column "PREPARED BY / PREPARED
+// FOR" layout can be split into left/right columns instead of reading garbled interleaved text.
+async function extractPdfTextLines(file){
+  const pdfjsLib = await ensurePdfJs();
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  const lines = [];
+  for(let p = 1; p <= pdf.numPages; p++){
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    const items = content.items
+      .filter(it => it.str && it.str.trim())
+      .map(it => ({ str: it.str, x: it.transform[4], y: it.transform[5] }));
+    items.sort((a,b) => b.y - a.y || a.x - b.x);
+    let current = null;
+    const Y_TOL = 3;
+    for(const it of items){
+      if(current && Math.abs(current.y - it.y) <= Y_TOL){
+        current.items.push(it);
+      } else {
+        current = { y: it.y, items: [it] };
+        lines.push(current);
+      }
+    }
+  }
+  lines.forEach(line => {
+    line.items.sort((a,b) => a.x - b.x);
+    line.text = line.items.map(i => i.str).join(' ').replace(/\s+/g, ' ').trim();
+  });
+  return lines;
+}
+
+// Matches cost rows like "ADDITIONAL SQ FOOTAGE POLISH  1,500  Square Feet  $4.98  $7,470.00".
+const BID_LINE_ITEM_RE = /^(.+?\S)\s+([\d,]+(?:\.\d+)?)\s+((?:Square|Linear|Sq\.?|Lin\.?)\s*(?:Feet|Ft\.?)|Each|EA)\s+\$([\d,]+\.\d{2})\s+\$([\d,]+\.\d{2})$/i;
+
+function parseBidPdfFields(lines){
+  const fullText = lines.map(l => l.text).join('\n');
+  const result = { bidNumber:'', company:'', contactName:'', phone:'', email:'', jobAddress:'', lineItems:[], total:null };
+
+  const bidMatch = fullText.match(/\bBid\s+([\w-]+)/i);
+  if(bidMatch) result.bidNumber = bidMatch[1];
+
+  // Two-column "PREPARED BY / PREPARED FOR" block: locate the header row + the x where the
+  // right (customer/GC) column starts, then read only items right of that split for each row
+  // down to the "BID DETAILS" header.
+  const headerIdx = lines.findIndex(l => /PREPARED\s+FOR/i.test(l.text));
+  if(headerIdx !== -1){
+    const headerLine = lines[headerIdx];
+    const rightItem = headerLine.items.find(it => /^FOR$/i.test(it.str.trim())) ||
+      headerLine.items.slice().reverse().find(it => /PREPARED/i.test(it.str) && it !== headerLine.items[0]);
+    const splitX = rightItem ? rightItem.x - 5 : null;
+    let endIdx = lines.findIndex((l,i) => i > headerIdx && /BID\s+DETAILS/i.test(l.text));
+    if(endIdx === -1) endIdx = Math.min(lines.length, headerIdx + 6);
+    if(splitX != null){
+      const rightRows = [];
+      for(let i = headerIdx + 1; i < endIdx; i++){
+        const text = lines[i].items.filter(it => it.x >= splitX).map(it => it.str).join(' ').replace(/\s+/g,' ').trim();
+        if(text) rightRows.push(text);
+      }
+      if(rightRows[0]) result.contactName = rightRows[0];
+      if(rightRows[1]) result.company = rightRows[1];
+      const phoneRow = rightRows.find(r => /\(\d{3}\)\s?\d{3}-\d{4}/.test(r));
+      if(phoneRow) result.phone = (phoneRow.match(/\(\d{3}\)\s?\d{3}-\d{4}/) || [''])[0];
+      const emailRow = rightRows.find(r => /[\w.+-]+@[\w-]+\.[\w.-]+/.test(r));
+      if(emailRow) result.email = (emailRow.match(/[\w.+-]+@[\w-]+\.[\w.-]+/) || [''])[0];
+    }
+  }
+
+  // "BID DETAILS": the line immediately after that header is the job site address.
+  const bidDetailsIdx = lines.findIndex(l => /BID\s+DETAILS/i.test(l.text));
+  if(bidDetailsIdx !== -1 && lines[bidDetailsIdx + 1]){
+    result.jobAddress = lines[bidDetailsIdx + 1].text;
+  }
+
+  // Cost line items: "Description  Qty  Unit  $unitPrice  $total" rows.
+  lines.forEach(line => {
+    const m = line.text.match(BID_LINE_ITEM_RE);
+    if(m){
+      result.lineItems.push({
+        name: m[1].trim(),
+        quantity: `${m[2]} ${m[3]}`.trim(),
+        price: Number(m[5].replace(/,/g, '')),
+      });
+    }
+  });
+
+  // Grand total: a standalone "TOTAL  $x" row (distinct from a per-section subtotal row like
+  // "Building 2 (Old Hospice)  $x"). Use the last match in case similar rows appear earlier.
+  const totalLine = lines.slice().reverse().find(l => /^TOTAL\s+\$([\d,]+\.\d{2})$/i.test(l.text));
+  if(totalLine){
+    const m = totalLine.text.match(/^TOTAL\s+\$([\d,]+\.\d{2})$/i);
+    result.total = Number(m[1].replace(/,/g, ''));
+  }
+
+  return result;
+}
+
+async function onBidPdfSelected(file){
+  if(!file) return;
+  const statusEl = document.getElementById('aj-bid-pdf-status');
+  statusEl.textContent = 'Reading PDF\u2026';
+  try{
+    const lines = await extractPdfTextLines(file);
+    const fields = parseBidPdfFields(lines);
+
+    jtSelectedJob = null; // manually-imported jobs have no JobTread link (no re-import later)
+    if(fields.company) document.getElementById('aj-loc').value = fields.company;
+    if(fields.jobAddress) document.getElementById('aj-address').value = fields.jobAddress;
+    const contactParts = [fields.contactName, fields.phone, fields.email].filter(Boolean);
+    if(contactParts.length) document.getElementById('aj-contact').value = contactParts.join(' — ');
+
+    jtSelectedFiles = [];
+    renderTakeoffChecklist();
+    jtSelectedBid = (fields.lineItems.length || fields.total != null)
+      ? { name: fields.bidNumber ? `Bid ${fields.bidNumber}` : file.name, total: fields.total, lineItems: fields.lineItems }
+      : null;
+    renderBidSummary();
+
+    const found = [fields.company && 'GC', fields.jobAddress && 'address', contactParts.length && 'contact', fields.lineItems.length && 'bid summary']
+      .filter(Boolean);
+    statusEl.textContent = found.length
+      ? `Imported ${found.join(', ')} from PDF — enter a Job Name and review before saving.`
+      : "Couldn't find recognizable fields in this PDF — enter details manually.";
+    if(!document.getElementById('aj-name').value.trim()){
+      document.getElementById('aj-name').focus();
+    }
+  } catch(e){
+    statusEl.textContent = 'Could not read that PDF — enter details manually.';
   }
 }
 

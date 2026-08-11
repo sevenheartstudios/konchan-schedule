@@ -167,6 +167,14 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
   text-decoration:underline;padding:8px 4px;
 }
 .del-btn:hover{color:var(--urgent);}
+.aj-takeoff-row{display:flex;align-items:center;gap:8px;padding:4px 0;}
+.aj-takeoff-row label{display:flex;align-items:center;gap:8px;font-weight:normal;flex:1;min-width:0;cursor:pointer;}
+.aj-takeoff-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.aj-takeoff-remove{
+  background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;
+  padding:4px 6px;border-radius:6px;flex-shrink:0;line-height:1;
+}
+.aj-takeoff-remove:hover{color:var(--urgent);}
 .section-move-select{
   background:#11161b;border:1px solid var(--line);color:var(--muted);
   padding:7px 28px 7px 10px;border-radius:8px;font-size:12px;cursor:pointer;
@@ -552,24 +560,43 @@ async function selectJobTreadJob(job){
     const contactParts = [contact.name, contact.phone, contact.email].filter(Boolean);
     document.getElementById('aj-contact').value = contactParts.join(' — ');
     jtSelectedFiles = json.files || [];
-    const takeoffField = document.getElementById('aj-takeoff-field');
-    const takeoffBox = document.getElementById('aj-takeoff');
+    renderTakeoffChecklist();
     if(jtSelectedFiles.length){
-      takeoffBox.innerHTML = jtSelectedFiles.map((f,i)=>`
-        <label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-weight:normal;">
-          <input type="checkbox" class="aj-takeoff-check" value="${i}" checked />
-          <span>${escapeHTML(f.name||'Untitled PDF')}</span>
-        </label>`).join('');
-      takeoffField.style.display = 'block';
-      statusEl.textContent = `Matched job loaded from JobTread (${jtSelectedFiles.length} PDF${jtSelectedFiles.length===1?'':'s'} found — all selected by default).`;
+      statusEl.textContent = `Matched job loaded from JobTread (${jtSelectedFiles.length} PDF${jtSelectedFiles.length===1?'':'s'} found — all selected by default, trash any you don't want).`;
     } else {
-      takeoffBox.innerHTML = '';
-      takeoffField.style.display = 'none';
       statusEl.textContent = 'Matched job loaded (no PDF take-off found on JobTread).';
     }
   } catch(e){
     statusEl.textContent = 'Could not load contact/take-off info; enter manually.';
   }
+}
+
+function renderTakeoffChecklist(){
+  const takeoffField = document.getElementById('aj-takeoff-field');
+  const takeoffBox = document.getElementById('aj-takeoff');
+  if(!jtSelectedFiles.length){
+    takeoffBox.innerHTML = '';
+    takeoffField.style.display = 'none';
+    return;
+  }
+  takeoffBox.innerHTML = jtSelectedFiles.map((f,i)=>`
+    <div class="aj-takeoff-row">
+      <label>
+        <input type="checkbox" class="aj-takeoff-check" value="${i}" ${f._checked===false?'':'checked'} />
+        <span>${escapeHTML(f.name||'Untitled PDF')}</span>
+      </label>
+      <button type="button" class="aj-takeoff-remove" data-idx="${i}" title="Don't import this file" aria-label="Remove file">🗑️</button>
+    </div>`).join('');
+  takeoffField.style.display = 'block';
+  takeoffBox.querySelectorAll('.aj-takeoff-check').forEach(cb=>{
+    cb.addEventListener('change', ()=>{ jtSelectedFiles[Number(cb.value)]._checked = cb.checked; });
+  });
+  takeoffBox.querySelectorAll('.aj-takeoff-remove').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      jtSelectedFiles.splice(Number(btn.dataset.idx), 1);
+      renderTakeoffChecklist();
+    });
+  });
 }
 
 function submitAddJobModal(){

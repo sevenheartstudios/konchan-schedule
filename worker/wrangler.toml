@@ -4,3 +4,7 @@ compatibility_date = "2026-08-10"
 
 [observability]
 enabled = true
+
+[[r2_buckets]]
+binding = "TAKEOFFS_BUCKET"
+bucket_name = "konchan-schedule-takeoffs"

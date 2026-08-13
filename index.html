@@ -210,6 +210,40 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 }
 .reimport-btn:hover{color:var(--text);border-color:var(--accent);}
 .reimport-btn:disabled{opacity:0.6;cursor:default;}
+.upload-takeoff-label{
+  background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+  font-size:12px;cursor:pointer;padding:8px 12px;border-radius:8px;width:100%;
+  display:flex;align-items:center;justify-content:center;gap:6px;margin-top:14px;
+}
+.upload-takeoff-label:hover{color:var(--text);border-color:var(--accent);}
+.upload-takeoff-label.disabled{opacity:0.6;pointer-events:none;}
+.upload-takeoff-status{font-size:12px;color:var(--muted);margin-top:6px;min-height:16px;}
+.sms-btn{
+  background:#0a84ff;border:none;color:#fff;font-weight:700;
+  font-size:13px;cursor:pointer;padding:10px 12px;border-radius:8px;width:100%;
+  display:flex;align-items:center;justify-content:center;gap:6px;margin-top:14px;
+}
+.sms-btn:hover{filter:brightness(1.08);}
+.sms-contact-row{
+  display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);
+  border-radius:8px;margin-bottom:6px;cursor:pointer;
+}
+.sms-contact-row.active{border-color:var(--accent);background:var(--panel2);}
+.sms-contact-name{font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sms-contact-phone{color:var(--muted);font-size:12px;flex-shrink:0;}
+.sms-contact-remove{background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:2px 4px;flex-shrink:0;}
+.sms-contact-remove:hover{color:var(--urgent);}
+.sms-add-contact{display:flex;gap:6px;margin-top:8px;}
+.sms-add-contact input{
+  flex:1;min-width:0;background:#11161b;border:1px solid var(--line);color:var(--text);
+  padding:8px 10px;border-radius:8px;font-size:13px;
+}
+#sms-custom-fields{display:none;grid-template-columns:1fr 1fr;gap:6px 10px;margin-top:10px;}
+.sms-field-check{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);font-weight:normal;}
+#sms-preview{
+  width:100%;background:#11161b;border:1px solid var(--line);color:var(--text);
+  padding:10px 12px;border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;
+}
 .section-move-select{
   background:#11161b;border:1px solid var(--line);color:var(--muted);
   padding:7px 28px 7px 10px;border-radius:8px;font-size:12px;cursor:pointer;
@@ -413,6 +447,40 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:16px 0 4px;}
   </div>
 </div>
 
+<!-- Send via Text (SMS) modal -->
+<div class="modal-overlay" id="sms-send-overlay" onclick="if(event.target===this) closeSmsSendModal()">
+  <div class="modal-sheet">
+    <h3>Send via Text</h3>
+    <div class="modal-field">
+      <label>Send To</label>
+      <div id="sms-contact-list"></div>
+      <div class="sms-add-contact">
+        <input type="text" id="sms-new-name" placeholder="Name" autocomplete="off" />
+        <input type="text" id="sms-new-phone" placeholder="Phone incl. country code" autocomplete="off" />
+        <button type="button" class="modal-btn secondary" style="flex:0 0 auto;" onclick="addSmsContact()">+ Add</button>
+      </div>
+    </div>
+    <div class="modal-field">
+      <label for="sms-mode">Message Content</label>
+      <select id="sms-mode" onchange="onSmsModeChange()">
+        <option value="full">Full summary</option>
+        <option value="basics">Basics only (address / contact)</option>
+        <option value="custom">Custom fields…</option>
+      </select>
+      <div id="sms-custom-fields"></div>
+    </div>
+    <div class="modal-field">
+      <label for="sms-preview">Preview (editable)</label>
+      <textarea id="sms-preview" rows="8" oninput="smsPreviewEdited=true;"></textarea>
+    </div>
+    <div class="jt-hint" id="sms-send-status"></div>
+    <div class="modal-actions">
+      <button class="modal-btn secondary" onclick="closeSmsSendModal()">Cancel</button>
+      <button class="modal-btn primary" id="sms-send-btn" onclick="submitSmsSend()">Send</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const PASSCODE_READONLY   = "2026";
 const PASSCODE_ADMIN      = "1260"; // full edit access, but cannot Add Job or Re-import from JobTread
@@ -477,6 +545,14 @@ async function loadData(){
       json.jobs   = toArray(json.jobs);
       json.urgent = toArray(json.urgent);
       json.visits = toArray(json.visits);
+      json.smsContacts = toArray(json.smsContacts);
+      if(!json.smsContacts.length){
+        // Seed the initial "send via text" recipient list on first load only.
+        json.smsContacts = [
+          { id: uid(), name: 'Matt', phone: '13524001014' },
+          { id: uid(), name: 'Dave', phone: '13525018955' },
+        ];
+      }
     }
     data = (json && json.jobs) ? json : null;
   } catch(e){
@@ -950,6 +1026,66 @@ async function reimportJobTreadDocuments(section, id){
   }
 }
 
+const TAKEOFF_UPLOAD_MAX_BYTES = 15 * 1024 * 1024; // 15MB, matches the server-side cap
+
+function fileToBase64(file){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onload = ()=>resolve(String(reader.result).split(',').pop());
+    reader.onerror = ()=>reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+// Lets a super admin attach a take-off PDF to a job straight from the device, independent of
+// JobTread (works for manually-added jobs too, not just JobTread-linked ones). Uploads through
+// this app's own Cloudflare Worker (same one used for JobTread search + Twilio SMS), which stores
+// the file in Firebase Storage and hands back a stable URL — never touches ARTracker.
+async function uploadTakeoffForJob(section, id, file){
+  if(readOnly || !isSuperAdmin || !file) return;
+  if(!JOBTREAD_PROXY_URL){ const s = document.getElementById('upload-takeoff-status-'+id); if(s) s.textContent = 'Upload proxy is not configured.'; return; }
+  const item = data[section].find(i=>i.id===id);
+  if(!item) return;
+  const statusEl = document.getElementById('upload-takeoff-status-'+id);
+  const labelEl = document.getElementById('upload-takeoff-label-'+id);
+  if(file.type !== 'application/pdf'){
+    if(statusEl) statusEl.textContent = 'Only PDF files are supported.';
+    return;
+  }
+  if(file.size > TAKEOFF_UPLOAD_MAX_BYTES){
+    if(statusEl) statusEl.textContent = 'File is too large (15MB max).';
+    return;
+  }
+  if(labelEl){ labelEl.classList.add('disabled'); labelEl.textContent = 'Uploading\u2026'; }
+  if(statusEl) statusEl.textContent = '';
+  try{
+    const base64Data = await fileToBase64(file);
+    const url = `${JOBTREAD_PROXY_URL}?action=takeoffUpload&key=${encodeURIComponent(JOBTREAD_PROXY_KEY)}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileName: file.name, contentType: file.type, data: base64Data }),
+    });
+    const json = await res.json();
+    if(!res.ok || !json.ok){
+      if(statusEl) statusEl.textContent = json.error || 'Upload failed.';
+      return;
+    }
+    item.takeoffFiles = Array.isArray(item.takeoffFiles) ? item.takeoffFiles : [];
+    item.takeoffFiles.push({ name: json.name || file.name, url: json.url });
+    saveData();
+    render();
+    setTimeout(()=>{
+      const el = document.getElementById('card-'+id);
+      if(el){ el.classList.add('open'); }
+    },50);
+  } catch(e){
+    if(statusEl) statusEl.textContent = 'Upload failed \u2014 check connection.';
+  } finally {
+    if(labelEl){ labelEl.classList.remove('disabled'); labelEl.textContent = '\ud83d\udcce Upload Take-Off'; }
+  }
+}
+
 let addingCard = false;
 function addCard(section){
   // Guard against a fast double-tap/double-click firing this twice and creating two "New Item"
@@ -1025,6 +1161,176 @@ function statusOpts(cur){
 }
 function sectionOpts(cur){
   return SECTION_OPTS.map(([v,l])=>`<option value="${v}"${cur===v?' selected':''}>${l}</option>`).join('');
+}
+
+// ---- Send job info via text (Twilio SMS, via the Worker's sendSms action) ----
+let smsSendTarget = null; // {section, id} of the card currently being sent
+let smsSelectedContactId = null;
+let smsPreviewEdited = false; // once the user hand-edits the preview, stop auto-regenerating it
+const SMS_FIELD_DEFS = [
+  ['loc','Location / GC'], ['address','Job Address'], ['contact','Job Contact'],
+  ['status','Status'], ['start','Start Date'], ['duration','Duration'], ['finish','Est. Finish'],
+  ['bid','Bid Total'], ['note','Notes'], ['takeoff','Take-Off Links'],
+];
+let smsCustomSelected = new Set(['loc','address','contact']);
+
+function openSmsSendModal(section, id){
+  if(readOnly) return;
+  const item = data[section].find(i=>i.id===id);
+  if(!item) return;
+  smsSendTarget = { section, id };
+  smsSelectedContactId = null;
+  smsPreviewEdited = false;
+  document.getElementById('sms-mode').value = 'full';
+  renderSmsContactList();
+  renderSmsCustomFieldsUI();
+  document.getElementById('sms-custom-fields').style.display = 'none';
+  updateSmsPreview();
+  document.getElementById('sms-send-status').textContent = '';
+  document.getElementById('sms-send-overlay').classList.add('open');
+}
+
+function closeSmsSendModal(){
+  document.getElementById('sms-send-overlay').classList.remove('open');
+}
+
+function renderSmsContactList(){
+  const box = document.getElementById('sms-contact-list');
+  const contacts = data.smsContacts || [];
+  if(!contacts.length){
+    box.innerHTML = '<div class="jt-hint">No saved contacts yet — add one below.</div>';
+    return;
+  }
+  box.innerHTML = contacts.map(c => `
+    <div class="sms-contact-row ${smsSelectedContactId===c.id?'active':''}" data-id="${escapeAttr(c.id)}">
+      <span class="sms-contact-name">${escapeHTML(c.name)}</span>
+      <span class="sms-contact-phone">${escapeHTML(c.phone)}</span>
+      <button type="button" class="sms-contact-remove" data-id="${escapeAttr(c.id)}" title="Remove contact" aria-label="Remove contact">🗑️</button>
+    </div>`).join('');
+  box.querySelectorAll('.sms-contact-row').forEach(row=>{
+    row.addEventListener('click', (e)=>{
+      if(e.target.closest('.sms-contact-remove')) return;
+      smsSelectedContactId = row.dataset.id;
+      renderSmsContactList();
+    });
+  });
+  box.querySelectorAll('.sms-contact-remove').forEach(btn=>{
+    btn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      if(!confirm('Remove this saved contact?')) return;
+      data.smsContacts = (data.smsContacts||[]).filter(c=>c.id!==btn.dataset.id);
+      if(smsSelectedContactId===btn.dataset.id) smsSelectedContactId = null;
+      saveData();
+      renderSmsContactList();
+    });
+  });
+}
+
+function addSmsContact(){
+  const nameEl = document.getElementById('sms-new-name');
+  const phoneEl = document.getElementById('sms-new-phone');
+  const name = nameEl.value.trim();
+  const digits = phoneEl.value.replace(/[^\d]/g,'');
+  if(!name || !digits){ alert('Enter both a name and a phone number (with country code).'); return; }
+  const contact = { id: uid(), name, phone: digits };
+  data.smsContacts = data.smsContacts || [];
+  data.smsContacts.push(contact);
+  saveData();
+  smsSelectedContactId = contact.id;
+  nameEl.value = ''; phoneEl.value = '';
+  renderSmsContactList();
+}
+
+function renderSmsCustomFieldsUI(){
+  const box = document.getElementById('sms-custom-fields');
+  box.innerHTML = SMS_FIELD_DEFS.map(([key,label])=>`
+    <label class="sms-field-check"><input type="checkbox" value="${key}" ${smsCustomSelected.has(key)?'checked':''} onchange="onSmsCustomFieldToggle(this)"> ${label}</label>`).join('');
+}
+
+function onSmsCustomFieldToggle(cb){
+  if(cb.checked) smsCustomSelected.add(cb.value); else smsCustomSelected.delete(cb.value);
+  updateSmsPreview();
+}
+
+function onSmsModeChange(){
+  const mode = document.getElementById('sms-mode').value;
+  document.getElementById('sms-custom-fields').style.display = mode==='custom' ? 'grid' : 'none';
+  updateSmsPreview();
+}
+
+function buildJobSmsMessage(item, mode, customFields){
+  mode = mode || 'full';
+  const include = (key) => {
+    if(mode==='full') return true;
+    if(mode==='basics') return ['address','contact'].includes(key);
+    return customFields && customFields.has(key);
+  };
+  const lines = [item.name || 'Job'];
+  if(item.loc && include('loc')) lines.push(item.loc);
+  if(item.address && include('address')) lines.push(item.address);
+  if(include('status')){
+    const statusLabel = STATUS_OPTS.find(([v])=>v===item.status)?.[1] || item.status;
+    if(statusLabel) lines.push(`Status: ${statusLabel}`);
+  }
+  if(item.start && include('start')) lines.push(`Start: ${item.start}`);
+  if(item.duration && include('duration')) lines.push(`Duration: ${item.duration}`);
+  if(item.finish && include('finish')) lines.push(`Est. Finish: ${item.finish}`);
+  if(item.contact && include('contact')) lines.push(`Contact: ${item.contact}`);
+  if(include('bid') && (item.bidTotal != null || (item.bidLineItems && item.bidLineItems.length))){
+    lines.push(`Bid Total: ${money(item.bidTotal)}`);
+  }
+  if(item.note && include('note')) lines.push(`Notes: ${item.note}`);
+  if(include('takeoff')){
+    const files = (item.takeoffFiles && item.takeoffFiles.length)
+      ? item.takeoffFiles
+      : (item.takeoffUrl ? [{ name: item.takeoffName, url: item.takeoffUrl }] : []);
+    if(files.length){
+      lines.push('');
+      lines.push('Take-Off(s):');
+      files.forEach(f => lines.push(`${f.name || 'PDF'}: ${f.url}`));
+    }
+  }
+  return lines.join('\n');
+}
+
+function updateSmsPreview(){
+  if(!smsSendTarget || smsPreviewEdited) return;
+  const item = data[smsSendTarget.section].find(i=>i.id===smsSendTarget.id);
+  if(!item) return;
+  const mode = document.getElementById('sms-mode').value;
+  document.getElementById('sms-preview').value = buildJobSmsMessage(item, mode, smsCustomSelected);
+}
+
+async function submitSmsSend(){
+  if(!smsSendTarget) return;
+  const contact = (data.smsContacts||[]).find(c=>c.id===smsSelectedContactId);
+  if(!contact){ alert('Pick (or add) a contact to send to.'); return; }
+  if(!JOBTREAD_PROXY_URL){ alert('The messaging proxy is not configured.'); return; }
+  const bodyText = document.getElementById('sms-preview').value.trim();
+  if(!bodyText){ alert('Message is empty.'); return; }
+  const statusEl = document.getElementById('sms-send-status');
+  const btn = document.getElementById('sms-send-btn');
+  btn.disabled = true;
+  statusEl.textContent = 'Sending\u2026';
+  try{
+    const url = `${JOBTREAD_PROXY_URL}?action=sendSms&key=${encodeURIComponent(JOBTREAD_PROXY_KEY)}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: contact.phone, body: bodyText }),
+    });
+    const json = await res.json();
+    if(!json.ok){
+      statusEl.textContent = json.error || 'Send failed.';
+      return;
+    }
+    statusEl.textContent = `Sent to ${contact.name}.`;
+    setTimeout(closeSmsSendModal, 900);
+  } catch(e){
+    statusEl.textContent = 'Send failed — check connection.';
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 function renderCard(section, item, idx, total){
@@ -1105,8 +1411,14 @@ function renderCard(section, item, idx, total){
     })()}` : ''}
     <textarea class="note-textarea" placeholder="Notes…"
       onchange="updateField('${section}','${item.id}','note',this.value)" ${ro?'disabled':''}>${escapeHTML(item.note||'')}</textarea>
+    ${!ro ? `<button type="button" class="sms-btn" onclick="openSmsSendModal('${section}','${item.id}')">💬 Send via Text</button>` : ''}
     ${!ro && isSuperAdmin && isJob && item.jtJobId ? `
     <button type="button" class="reimport-btn" id="reimport-btn-${item.id}" style="margin-top:14px;" onclick="reimportJobTreadDocuments('${section}','${item.id}')">🔄 Re-import from JobTread</button>` : ''}
+    ${!ro && isSuperAdmin && isJob ? `
+    <label class="upload-takeoff-label" id="upload-takeoff-label-${item.id}" for="upload-takeoff-input-${item.id}">📎 Upload Take-Off</label>
+    <input type="file" id="upload-takeoff-input-${item.id}" accept="application/pdf" style="display:none;"
+      onchange="uploadTakeoffForJob('${section}','${item.id}',this.files[0]); this.value='';" />
+    <div class="upload-takeoff-status" id="upload-takeoff-status-${item.id}"></div>` : ''}
     ${!ro ? `
     <div class="card-actions">
       <div class="reorder-btns">

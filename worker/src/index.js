@@ -11,9 +11,30 @@
 //   4. `wrangler deploy` — copy the resulting workers.dev URL into index.html's
 //      JOBTREAD_PROXY_URL constant.
 //
-// Endpoints (GET):
-//   ?action=jtSearch&q=<text>&key=<secret>
-//   ?action=jtJobDetail&jobId=&accountId=&key=<secret>
+// Twilio SMS setup, for the "Send via Text" button:
+//   1. In the Twilio Console, use an SMS-capable Twilio phone number (the existing internal
+//      Twilio account already approved for another app can be reused).
+//   2. `wrangler secret put TWILIO_ACCOUNT_SID`
+//      `wrangler secret put TWILIO_AUTH_TOKEN`
+//      `wrangler secret put TWILIO_FROM_NUMBER`     (E.164 format, e.g. +13525551234)
+//
+// Take-off PDF upload setup, for the super-admin "Upload Take-Off" button. Uses Cloudflare R2
+// (kept fully PRIVATE — accessed only via this Worker's binding, never a public bucket URL):
+//   1. Enable R2 for this Cloudflare account (dash.cloudflare.com > R2 > Enable) if not already.
+//   2. `wrangler r2 bucket create konchan-schedule-takeoffs`
+//   3. Add to wrangler.toml:
+//        [[r2_buckets]]
+//        binding = "TAKEOFFS_BUCKET"
+//        bucket_name = "konchan-schedule-takeoffs"
+//   4. `wrangler deploy`
+//
+// Endpoints:
+//   GET  ?action=jtSearch&q=<text>&key=<secret>
+//   GET  ?action=jtJobDetail&jobId=&accountId=&key=<secret>
+//   POST ?action=sendSms&key=<secret>   body: {"to":"<digits w/ country code>","body":"<message text>"}
+//   POST ?action=takeoffUpload&key=<secret>   body: {"fileName":"","contentType":"application/pdf","data":"<base64>"}
+//   GET  /takeoff/<id>   — serves an uploaded PDF back out (no secret; meant to be opened
+//                          directly, e.g. from a texted SMS link, by people with no login)
 
 const JOBTREAD_PAVE_URL = "https://api.jobtread.com/pave";
 const ALLOWED_ORIGINS = new Set([
@@ -25,7 +46,7 @@ function corsHeaders(origin) {
   const allow = ALLOWED_ORIGINS.has(origin) ? origin : "https://konchan-schedule.web.app";
   return {
     "Access-Control-Allow-Origin": allow,
-    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
   };
 }
@@ -232,6 +253,63 @@ async function fetchJobBid(jobId, env) {
   }
 }
 
+const TAKEOFF_PREFIX = "takeoffs/";
+const TAKEOFF_MAX_BYTES = 15 * 1024 * 1024; // 15MB
+
+// Uploads a take-off PDF into the (private) R2 bucket and returns a random UUID that
+// GET /takeoff/<id> can later use to serve it back out.
+async function uploadTakeoffPdf(fileName, contentType, base64Data, env) {
+  if (!env.TAKEOFFS_BUCKET) throw new Error("Take-off storage is not configured (missing TAKEOFFS_BUCKET R2 binding).");
+  if (contentType !== "application/pdf") throw new Error("Only PDF files are supported");
+  if (!base64Data) throw new Error("Missing file data");
+  const binary = atob(base64Data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  if (!bytes.length) throw new Error("File is empty");
+  if (bytes.length > TAKEOFF_MAX_BYTES) throw new Error("File is too large (15MB max)");
+  const id = crypto.randomUUID();
+  await env.TAKEOFFS_BUCKET.put(`${TAKEOFF_PREFIX}${id}.pdf`, bytes, { httpMetadata: { contentType: "application/pdf" } });
+  return { id, name: fileName || "Take-Off.pdf" };
+}
+
+// Streams a previously-uploaded take-off PDF back out of the (private) R2 bucket.
+async function fetchTakeoffPdf(id, env) {
+  if (!env.TAKEOFFS_BUCKET) throw new Error("Take-off storage is not configured (missing TAKEOFFS_BUCKET R2 binding).");
+  return env.TAKEOFFS_BUCKET.get(`${TAKEOFF_PREFIX}${id}.pdf`);
+}
+
+// Sends `bodyText` as a plain SMS via the Twilio REST API.
+async function sendTwilioSms(to, bodyText, env) {
+  const accountSid = env.TWILIO_ACCOUNT_SID;
+  const authToken = env.TWILIO_AUTH_TOKEN;
+  const fromNumber = env.TWILIO_FROM_NUMBER;
+  if (!accountSid || !authToken || !fromNumber) {
+    throw new Error("Twilio is not configured (missing TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FROM_NUMBER secrets).");
+  }
+  const toE164 = to.startsWith("+") ? to : `+${to}`;
+  const params = new URLSearchParams({ To: toE164, From: fromNumber, Body: bodyText });
+  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${btoa(`${accountSid}:${authToken}`)}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: params.toString(),
+  });
+  const text = await res.text();
+  let payload;
+  try {
+    payload = JSON.parse(text || "{}");
+  } catch {
+    payload = { raw: text };
+  }
+  if (!res.ok) {
+    const msg = (payload && payload.message) || text.slice(0, 300);
+    throw new Error(`SMS send failed (${res.status}): ${msg}`);
+  }
+  return payload;
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -241,8 +319,29 @@ export default {
       return new Response(null, { headers: corsHeaders(origin) });
     }
 
+    // Take-off PDF serve route — deliberately outside the ?action=/key= gate below, since these
+    // links are meant to be opened directly (e.g. clicked from a texted SMS) by people with no
+    // login. The id is a random UUID with no directory-traversal risk.
+    const takeoffMatch = url.pathname.match(/^\/takeoff\/([0-9a-fA-F-]{36})$/);
+    if (takeoffMatch) {
+      try {
+        const object = await fetchTakeoffPdf(takeoffMatch[1], env);
+        if (!object) return new Response("Not found", { status: 404 });
+        return new Response(object.body, {
+          headers: {
+            "Content-Type": "application/pdf",
+            "Content-Disposition": "inline",
+            "Cache-Control": "private, max-age=86400",
+          },
+        });
+      } catch (err) {
+        return new Response(err.message || "Failed to load file", { status: 500 });
+      }
+    }
+
     const action = url.searchParams.get("action");
-    if (action !== "jtSearch" && action !== "jtJobDetail") {
+    const knownActions = new Set(["jtSearch", "jtJobDetail", "sendSms", "takeoffUpload"]);
+    if (!knownActions.has(action)) {
       return jsonResponse({ ok: false, error: "Unknown action" }, origin);
     }
     if (!checkSecret(url, env)) {
@@ -253,6 +352,30 @@ export default {
       if (action === "jtSearch") {
         const jobs = await searchJobs(url.searchParams.get("q") || "", env);
         return jsonResponse({ ok: true, jobs }, origin);
+      }
+      if (action === "sendSms") {
+        if (request.method !== "POST") {
+          return jsonResponse({ ok: false, error: "sendSms requires POST" }, origin);
+        }
+        const body = await request.json();
+        const to = String(body.to || "").replace(/[^\d+]/g, "");
+        const bodyText = String(body.body || "").slice(0, 1600);
+        if (!to) return jsonResponse({ ok: false, error: "Missing recipient phone number" }, origin);
+        if (!bodyText) return jsonResponse({ ok: false, error: "Missing message body" }, origin);
+        const result = await sendTwilioSms(to, bodyText, env);
+        return jsonResponse({ ok: true, result }, origin);
+      }
+      if (action === "takeoffUpload") {
+        if (request.method !== "POST") {
+          return jsonResponse({ ok: false, error: "takeoffUpload requires POST" }, origin);
+        }
+        const body = await request.json();
+        const fileName = typeof body.fileName === "string" ? body.fileName.slice(0, 200) : "";
+        const contentType = typeof body.contentType === "string" ? body.contentType : "";
+        const data = typeof body.data === "string" ? body.data : "";
+        const { id, name } = await uploadTakeoffPdf(fileName, contentType, data, env);
+        const takeoffUrl = `${url.origin}/takeoff/${id}`;
+        return jsonResponse({ ok: true, id, url: takeoffUrl, name }, origin);
       }
       const [contact, files, bid] = await Promise.all([
         fetchAccountContact(url.searchParams.get("accountId") || "", env),

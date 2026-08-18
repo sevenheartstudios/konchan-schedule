@@ -85,6 +85,27 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 }
 .section-label::after{content:"";flex:1;height:1px;background:var(--line);}
 .closed-section-label{cursor:pointer;user-select:none;}
+
+/* ---- UPCOMING STARTS SUMMARY ---- */
+.upcoming-summary{
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  padding:14px 16px;margin-bottom:6px;
+}
+.upcoming-summary-title{
+  font-size:11px;letter-spacing:2px;color:var(--accent);text-transform:uppercase;
+  margin-bottom:10px;
+}
+.upcoming-summary-empty{color:var(--muted);font-size:13px;font-style:italic;}
+.upcoming-summary-row{
+  display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+  padding:8px 0;border-top:1px solid var(--line);
+}
+.upcoming-summary-row:first-child{border-top:none;padding-top:0;}
+.upcoming-summary-text{min-width:0;}
+.upcoming-summary-name{font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.upcoming-summary-loc{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.upcoming-summary-date{font-size:12px;color:var(--muted);flex-shrink:0;white-space:nowrap;}
+.upcoming-summary-date.soon{color:#f0978a;font-weight:700;}
 .closed-section-label .card-chevron{transition:transform 0.2s;}
 .closed-section-label.open .card-chevron{transform:rotate(90deg);}
 .closed-container{display:none;}
@@ -364,6 +385,11 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:16px 0 4px;}
   </div>
 
   <div class="app-body">
+    <div class="upcoming-summary">
+      <div class="upcoming-summary-title">Starting Soon <span id="upcoming-starts-count"></span></div>
+      <div id="upcoming-starts-list"></div>
+    </div>
+
     <div class="section-label">Scheduled Jobs</div>
     <div id="jobs-container"></div>
 
@@ -1167,6 +1193,89 @@ function toggleCard(id){
 function escapeAttr(s){ return (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
 function escapeHTML(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
 
+// ---- Flexible "start date" parsing for the Upcoming Starts summary ----
+// The `start` field is free-text (JobTread imports/manual entry), e.g. "7-20-26",
+// "June 22", "~July 13", "Week of 6/22", "beginning of sept.". Best-effort only —
+// unparseable text (blank, "2026", etc.) is simply excluded from the summary.
+const MONTH_NAMES = {jan:0,january:0,feb:1,february:1,mar:2,march:2,apr:3,april:3,may:4,
+  jun:5,june:5,jul:6,july:6,aug:7,august:7,sep:8,sept:8,september:8,oct:9,october:9,
+  nov:10,november:10,dec:11,december:11};
+function inferredYearDate(monthIdx, day){
+  const now = new Date();
+  let d = new Date(now.getFullYear(), monthIdx, day);
+  // No year given — if that date already passed by more than ~60 days, assume next year.
+  if((d - now) / 86400000 < -60) d = new Date(now.getFullYear()+1, monthIdx, day);
+  return d;
+}
+function parseFlexibleDate(str){
+  if(!str) return null;
+  let s = str.trim().replace(/^~/,'').trim();
+  const weekOf = s.match(/^week of\s+(.+)$/i);
+  if(weekOf) s = weekOf[1].trim();
+  let m;
+  if((m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/))){
+    const yr = m[3].length===2 ? 2000+Number(m[3]) : Number(m[3]);
+    const d = new Date(yr, Number(m[1])-1, Number(m[2]));
+    return isNaN(d.getTime()) ? null : d;
+  }
+  if((m = s.match(/^(\d{1,2})[\/\-](\d{1,2})$/))){
+    return inferredYearDate(Number(m[1])-1, Number(m[2]));
+  }
+  if((m = s.match(/^([A-Za-z]+)\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s*(\d{4}))?$/))){
+    const monKey = m[1].toLowerCase();
+    if(MONTH_NAMES.hasOwnProperty(monKey)){
+      const monthIdx = MONTH_NAMES[monKey];
+      return m[3] ? new Date(Number(m[3]), monthIdx, Number(m[2])) : inferredYearDate(monthIdx, Number(m[2]));
+    }
+  }
+  // Vague phrasing like "beginning of sept." / "mid sept" / "end of sept" — approximate a day.
+  if((m = s.match(/^(early|beginning|start|mid|middle|end|late)\s*(?:of\s+)?([A-Za-z]+)\.?$/i))){
+    const monKey = m[2].toLowerCase();
+    if(MONTH_NAMES.hasOwnProperty(monKey)){
+      const part = m[1].toLowerCase();
+      const day = (part==='mid'||part==='middle') ? 15 : (part==='end'||part==='late') ? 25 : 5;
+      return inferredYearDate(MONTH_NAMES[monKey], day);
+    }
+  }
+  return null;
+}
+function buildUpcomingStarts(){
+  const today = new Date(); today.setHours(0,0,0,0);
+  const horizon = new Date(today); horizon.setDate(horizon.getDate()+30);
+  const upcoming = [];
+  data.jobs.forEach(item=>{
+    if(item.status==='closed') return;
+    const d = parseFlexibleDate(item.start);
+    if(!d) return;
+    d.setHours(0,0,0,0);
+    if(d >= today && d <= horizon) upcoming.push({item, date:d});
+  });
+  upcoming.sort((a,b)=>a.date-b.date);
+  return upcoming;
+}
+function renderUpcomingStarts(){
+  const rows = buildUpcomingStarts();
+  document.getElementById('upcoming-starts-count').textContent = rows.length ? `(${rows.length})` : '';
+  const listEl = document.getElementById('upcoming-starts-list');
+  if(!rows.length){
+    listEl.innerHTML = '<div class="upcoming-summary-empty">No jobs currently starting in the next 30 days.</div>';
+    return;
+  }
+  const today = new Date(); today.setHours(0,0,0,0);
+  listEl.innerHTML = rows.map(({item,date})=>{
+    const daysOut = Math.round((date-today)/86400000);
+    const dateLabel = date.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    const whenLabel = daysOut===0 ? 'today' : daysOut===1 ? 'tomorrow' : `${daysOut}d`;
+    return `<div class="upcoming-summary-row">
+      <div class="upcoming-summary-text">
+        <div class="upcoming-summary-name">${escapeHTML(item.name)}</div>
+        ${item.loc ? `<div class="upcoming-summary-loc">${escapeHTML(item.loc)}</div>` : ''}
+      </div>
+      <div class="upcoming-summary-date${daysOut<=7?' soon':''}">${dateLabel} · ${whenLabel}</div>
+    </div>`;
+  }).join('');
+}
+
 const STATUS_OPTS = [['active','Active'],['followup','Needs Follow-up'],['scheduled','Scheduled'],['closed','Closed']];
 const SECTION_OPTS = [['jobs','Jobs'],['urgent','Urgent'],['visits','Visits']];
 
@@ -1454,6 +1563,7 @@ function toggleClosedSection(){
 }
 
 function render(){
+  renderUpcomingStarts();
   const closedCards = [];
   ['jobs','urgent','visits'].forEach(sec => {
     const arr = data[sec];

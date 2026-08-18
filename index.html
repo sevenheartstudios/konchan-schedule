@@ -87,26 +87,27 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .closed-section-label{cursor:pointer;user-select:none;}
 
 /* ---- UPCOMING STARTS SUMMARY ---- */
+/* Inverted to match the FAB accent color so it stands out from the rest of the (dark) UI. */
 .upcoming-summary{
-  background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  background:var(--accent);border:1px solid var(--accent);border-radius:12px;
   padding:14px 16px;margin-bottom:6px;
 }
 .upcoming-summary-title{
-  font-size:11px;letter-spacing:2px;color:var(--accent);text-transform:uppercase;
-  margin-bottom:10px;
+  font-size:11px;letter-spacing:2px;color:#1a1300;text-transform:uppercase;
+  margin-bottom:10px;opacity:0.8;
 }
-.upcoming-summary-empty{color:var(--muted);font-size:13px;font-style:italic;}
+.upcoming-summary-empty{color:#4a3410;font-size:13px;font-style:italic;}
 .upcoming-summary-row{
   display:flex;justify-content:space-between;align-items:baseline;gap:10px;
-  padding:8px 0;border-top:1px solid var(--line);
+  padding:8px 0;border-top:1px solid rgba(26,19,0,0.25);
 }
 .upcoming-summary-row:first-child{border-top:none;padding-top:0;}
 .upcoming-summary-text{min-width:0;}
-.upcoming-summary-name{font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.upcoming-summary-loc{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.upcoming-summary-meta{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;}
-.upcoming-summary-date{font-size:12px;color:var(--muted);flex-shrink:0;white-space:nowrap;text-align:right;}
-.upcoming-summary-date.soon{color:#f0978a;font-weight:700;}
+.upcoming-summary-name{font-weight:700;color:#1a1300;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.upcoming-summary-loc{font-size:12px;color:#4a3410;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.upcoming-summary-meta{font-size:11px;color:#4a3410;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;}
+.upcoming-summary-date{font-size:12px;color:#4a3410;flex-shrink:0;white-space:nowrap;text-align:right;}
+.upcoming-summary-date.soon{color:#6e1810;font-weight:700;}
 .closed-section-label .card-chevron{transition:transform 0.2s;}
 .closed-section-label.open .card-chevron{transform:rotate(90deg);}
 .closed-container{display:none;}
@@ -387,7 +388,7 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:16px 0 4px;}
 
   <div class="app-body">
     <div class="upcoming-summary">
-      <div class="upcoming-summary-title">Starting Soon <span id="upcoming-starts-count"></span></div>
+      <div class="upcoming-summary-title">Potential Jobs in the next 30 days <span id="upcoming-starts-count"></span></div>
       <div id="upcoming-starts-list"></div>
     </div>
 
@@ -1240,6 +1241,14 @@ function parseFlexibleDate(str){
   }
   return null;
 }
+// A date is only "specific" if it's a plain numeric mm/dd or mm/dd/yy(yy) — anything else
+// (month names, "week of", vague phrasing) is an estimate, not a confirmed date.
+function isSpecificDate(str){
+  if(!str) return false;
+  const s = str.trim();
+  if(/^~/.test(s) || /^week of/i.test(s)) return false;
+  return /^\d{1,2}[\/\-]\d{1,2}([\/\-]\d{2,4})?$/.test(s);
+}
 function buildUpcomingStarts(){
   const today = new Date(); today.setHours(0,0,0,0);
   const horizon = new Date(today); horizon.setDate(horizon.getDate()+30);
@@ -1265,12 +1274,13 @@ function renderUpcomingStarts(){
   const today = new Date(); today.setHours(0,0,0,0);
   listEl.innerHTML = rows.map(({item,date})=>{
     const daysOut = Math.round((date-today)/86400000);
-    const dateLabel = date.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    const dateLabel = date.toLocaleDateString('en-US',{month:'short',day:'numeric'}) + (isSpecificDate(item.start) ? '' : ' (est.)');
     const whenLabel = daysOut===0 ? 'today' : daysOut===1 ? 'tomorrow' : `${daysOut}d`;
     const metaParts = [];
     if(item.duration) metaParts.push(`Duration: ${item.duration}`);
     const finishDate = parseFlexibleDate(item.finish);
-    const finishLabel = finishDate ? finishDate.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : (item.finish||'').trim();
+    let finishLabel = finishDate ? finishDate.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : (item.finish||'').trim();
+    if(finishDate && !isSpecificDate(item.finish)) finishLabel += ' (est.)';
     if(finishLabel) metaParts.push(`Ends: ${finishLabel}`);
     return `<div class="upcoming-summary-row">
       <div class="upcoming-summary-text">

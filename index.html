@@ -104,7 +104,8 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .upcoming-summary-text{min-width:0;}
 .upcoming-summary-name{font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .upcoming-summary-loc{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.upcoming-summary-date{font-size:12px;color:var(--muted);flex-shrink:0;white-space:nowrap;}
+.upcoming-summary-meta{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;}
+.upcoming-summary-date{font-size:12px;color:var(--muted);flex-shrink:0;white-space:nowrap;text-align:right;}
 .upcoming-summary-date.soon{color:#f0978a;font-weight:700;}
 .closed-section-label .card-chevron{transition:transform 0.2s;}
 .closed-section-label.open .card-chevron{transform:rotate(90deg);}
@@ -1266,10 +1267,16 @@ function renderUpcomingStarts(){
     const daysOut = Math.round((date-today)/86400000);
     const dateLabel = date.toLocaleDateString('en-US',{month:'short',day:'numeric'});
     const whenLabel = daysOut===0 ? 'today' : daysOut===1 ? 'tomorrow' : `${daysOut}d`;
+    const metaParts = [];
+    if(item.duration) metaParts.push(`Duration: ${item.duration}`);
+    const finishDate = parseFlexibleDate(item.finish);
+    const finishLabel = finishDate ? finishDate.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : (item.finish||'').trim();
+    if(finishLabel) metaParts.push(`Ends: ${finishLabel}`);
     return `<div class="upcoming-summary-row">
       <div class="upcoming-summary-text">
         <div class="upcoming-summary-name">${escapeHTML(item.name)}</div>
         ${item.loc ? `<div class="upcoming-summary-loc">${escapeHTML(item.loc)}</div>` : ''}
+        ${metaParts.length ? `<div class="upcoming-summary-meta">${escapeHTML(metaParts.join(' · '))}</div>` : ''}
       </div>
       <div class="upcoming-summary-date${daysOut<=7?' soon':''}">${dateLabel} · ${whenLabel}</div>
     </div>`;

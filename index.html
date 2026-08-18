@@ -1245,7 +1245,7 @@ function buildUpcomingStarts(){
   const horizon = new Date(today); horizon.setDate(horizon.getDate()+30);
   const upcoming = [];
   data.jobs.forEach(item=>{
-    if(item.status==='closed') return;
+    if(item.status!=='scheduled') return;
     const d = parseFlexibleDate(item.start);
     if(!d) return;
     d.setHours(0,0,0,0);

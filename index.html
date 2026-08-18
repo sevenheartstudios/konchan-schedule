@@ -15,8 +15,8 @@
   --accent:#d4a24e;
   --active:#3f7d5c;
   --urgent:#b94a3c;
-  --upcoming:#3a6ea5;
-  --check:#7a6fa8;
+  --scheduled:#3a6ea5;
+  --followup:#7a6fa8;
   --closed:#5a6472;
   --text:#eae6dd;
   --muted:#8a93a0;
@@ -97,9 +97,8 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 }
 .card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;}
 .card.active::before{background:var(--active);}
-.card.upcoming::before{background:var(--upcoming);}
-.card.urgent::before{background:var(--urgent);}
-.card.check::before{background:var(--check);}
+.card.scheduled::before{background:var(--scheduled);}
+.card.followup::before{background:var(--followup);}
 .card.closed::before{background:var(--closed);}
 
 /* Card header row — always visible */
@@ -127,9 +126,8 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
   padding:4px 9px;border-radius:20px;white-space:nowrap;flex-shrink:0;
 }
 .badge.active{background:rgba(63,125,92,0.2);color:#7fd9a8;}
-.badge.upcoming{background:rgba(58,110,165,0.2);color:#8ec1f0;}
-.badge.urgent{background:rgba(185,74,60,0.2);color:#f0978a;}
-.badge.check{background:rgba(122,111,168,0.2);color:#c4b8ef;}
+.badge.scheduled{background:rgba(58,110,165,0.2);color:#8ec1f0;}
+.badge.followup{background:rgba(122,111,168,0.2);color:#c4b8ef;}
 .badge.closed{background:rgba(90,100,114,0.25);color:#aeb6c0;}
 
 /* Expandable body */
@@ -537,6 +535,21 @@ function toArray(val){
   return Object.values(val);
 }
 
+// One-time migration from the old 5-status scheme (active/upcoming/urgent/check/closed)
+// to the new 4-status scheme (active/followup/scheduled/closed).
+const LEGACY_STATUS_MAP = { upcoming:'scheduled', urgent:'followup', check:'followup' };
+function normalizeStatus(s){ return LEGACY_STATUS_MAP[s] || s; }
+function migrateLegacyStatuses(){
+  let changed = false;
+  for(const section of ['jobs','urgent','visits']){
+    for(const item of data[section]){
+      const next = normalizeStatus(item.status);
+      if(next !== item.status){ item.status = next; changed = true; }
+    }
+  }
+  return changed;
+}
+
 async function loadData(){
   try{
     const res = await fetch(DB_URL);
@@ -564,6 +577,7 @@ async function loadData(){
       '<span style="color:#f0978a">Failed to load data.</span>';
     return;
   }
+  if(migrateLegacyStatuses()) saveData();
   document.getElementById('loading-screen').style.display = 'none';
   document.getElementById('app').style.display = 'block';
   render();
@@ -964,7 +978,7 @@ function submitAddJobModal(){
     loc: document.getElementById('aj-loc').value.trim(),
     address: document.getElementById('aj-address').value.trim(),
     contact: document.getElementById('aj-contact').value.trim(),
-    status: 'upcoming',
+    status: 'scheduled',
     note: '',
     start: '', duration: '', finish: '',
     jtJobId: jtSelectedJob ? jtSelectedJob.jobId : '',
@@ -1093,7 +1107,7 @@ function addCard(section){
   if(addingCard) return;
   addingCard = true;
   setTimeout(()=>{ addingCard = false; }, 800);
-  const status = section==='jobs' ? 'upcoming' : section==='urgent' ? 'urgent' : 'check';
+  const status = section==='jobs' ? 'scheduled' : 'followup';
   const item = {id:uid(),name:'New Item',loc:'',status,note:''};
   if(section==='jobs'){ item.start=''; item.duration=''; item.finish=''; }
   data[section].push(item);
@@ -1153,7 +1167,7 @@ function toggleCard(id){
 function escapeAttr(s){ return (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
 function escapeHTML(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
 
-const STATUS_OPTS = [['active','Active'],['upcoming','Upcoming'],['urgent','Urgent'],['check','Pending'],['closed','Closed']];
+const STATUS_OPTS = [['active','Active'],['followup','Needs Follow-up'],['scheduled','Scheduled'],['closed','Closed']];
 const SECTION_OPTS = [['jobs','Jobs'],['urgent','Urgent'],['visits','Visits']];
 
 function statusOpts(cur){
